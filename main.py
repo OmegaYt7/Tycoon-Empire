@@ -14,7 +14,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 # Импорты
 import config
 import database
-import promocodes  # <--- Модуль промокодов
+import promocodes
+import admin_panel
 
 logging.basicConfig(level=logging.WARNING)
 bot = Bot(token=config.BOT_TOKEN)
@@ -38,6 +39,8 @@ async def autosave_loop():
 
 BASE_DIAMOND_CHANCE = 0.001
 ITEMS_PER_PAGE = 10
+NICKNAME_CHANGE_COST = 1000
+NICKNAME_CHANGE_DAYS = 7
 
 FUNNY_RESPONSES = [
     "Моя твоя не понимать... Тапай лучше! 👆",
@@ -207,16 +210,16 @@ def get_current_finger_info(user):
             break
     return current_finger_name, current_finger_bonus
 
-# --- ОБНОВЛЕННОЕ ГЛАВНОЕ МЕНЮ ---
+# --- ОБНОВЛЕНО: ГЛАВНОЕ МЕНЮ (Одна кнопка Тапать внизу, Рефералка убрана)
 def main_menu():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🏪 Магазин")],
         [KeyboardButton(text="🏗️ Сооружения"), KeyboardButton(text="📝 Задания")],
         [KeyboardButton(text="🏆 Топ-10"), KeyboardButton(text="⚙️ Настройки")],
-        [KeyboardButton(text="💰 Тапать монеты")] # Кнопка перенесена вниз
+        [KeyboardButton(text="💰 Тапать монеты")]
     ], resize_keyboard=True, one_time_keyboard=False)
 
-# --- МЕНЮ ПРОФИЛЯ ---
+# --- НОВОЕ: МЕНЮ ПРОФИЛЯ (Рефералка тут)
 def profile_menu():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="👥 Рефералка")],
@@ -225,9 +228,15 @@ def profile_menu():
 
 def settings_menu():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔒 Конфиденциальность"), KeyboardButton(text="ℹ️ О игре")],
+        [KeyboardButton(text="📝 Сменить ник"), KeyboardButton(text="🔒 Конфиденциальность")],
+        [KeyboardButton(text="ℹ️ О игре"), KeyboardButton(text="👮‍♂️ Админ панель")],
         [KeyboardButton(text="🔙 Назад")]
     ], resize_keyboard=True, one_time_keyboard=False)
+
+def cancel_menu():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="❌ Отмена")]
+    ], resize_keyboard=True, one_time_keyboard=True)
 
 def tap_button():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💥 ТАПАЙ СЮДА! 💥", callback_data="tap")]])
@@ -304,7 +313,8 @@ async def start(message: Message):
             "username": message.from_user.username or "User",
             "nickname": None,
             "custom_id": custom_id,
-            "registration_date": date.today().isoformat(),  # <--- ДОБАВЛЕНО: ДАТА РЕГИСТРАЦИИ
+            "registration_date": date.today().isoformat(),
+            "last_nick_change": None, # Для кулдауна смены ника
             "state": "registering_nickname",
             "privacy_enabled": True, 
             "balance": 0, 
@@ -421,6 +431,7 @@ async def promo_handler(message: Message):
 async def handle_text(message: Message):
     user_id = message.from_user.id
     
+    # --- РЕГИСТРАЦИЯ НИКА ---
     if user_id in users and users[user_id].get("state") == "registering_nickname":
         user = users[user_id]
         text = message.text.strip()
@@ -431,11 +442,45 @@ async def handle_text(message: Message):
         
         user["nickname"] = text
         safe_name = str(text).replace("<", "&lt;").replace(">", "&gt;")
+        
+        # ОТПРАВКА УВЕДОМЛЕНИЯ АДМИНАМ
+        await admin_panel.notify_new_player(bot, user)
+        
         await message.answer(f"✅ Отличный ник: <b>{safe_name}</b>", reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
         
         user["state"] = "active"
         calculate_passive(user)
         await show_main_interface(message, user_id)
+        return
+    
+    # --- СМЕНА НИКА (ВВОД НОВОГО) ---
+    if user_id in users and users[user_id].get("state") == "changing_nickname":
+        if message.text == "❌ Отмена":
+            users[user_id]["state"] = "active"
+            await message.answer("⚙️ **Меню настроек**", reply_markup=settings_menu(), parse_mode="Markdown")
+            return
+
+        user = users[user_id]
+        new_nick = message.text.strip()
+
+        if len(new_nick) > 15:
+             await message.answer("❌ Ник слишком длинный! Максимум 15 символов. Попробуй снова или нажми Отмена.", reply_markup=cancel_menu())
+             return
+             
+        # Списываем
+        if user["diamonds"] < NICKNAME_CHANGE_COST:
+            # Страховка, хотя мы проверяли кнопку
+            user["state"] = "active"
+            await message.answer("❌ Ошибка: Не хватает алмазов.", reply_markup=settings_menu())
+            return
+            
+        user["diamonds"] -= NICKNAME_CHANGE_COST
+        user["nickname"] = new_nick
+        user["last_nick_change"] = date.today().isoformat()
+        user["state"] = "active"
+        
+        safe_nick = str(new_nick).replace("<", "&lt;").replace(">", "&gt;")
+        await message.answer(f"✅ Ник успешно изменён на <b>{safe_nick}</b>!\nСписано: {NICKNAME_CHANGE_COST} 💎", parse_mode="HTML", reply_markup=settings_menu())
         return
 
     # --- ОБЫЧНЫЕ КОМАНДЫ ---
@@ -461,12 +506,103 @@ async def handle_text(message: Message):
         await privacy_settings(message)
     elif message.text == "ℹ️ О игре":
         await about_game(message)
+        
+    # --- НОВЫЕ КНОПКИ НАСТРОЕК ---
+    elif message.text == "📝 Сменить ник":
+        await request_nick_change(message)
+    elif message.text == "👮‍♂️ Админ панель":
+        await open_admin_panel(message)
+        
     else:
         try:
             await message.react([ReactionTypeEmoji(emoji="🤔")])
             await message.reply(random.choice(FUNNY_RESPONSES))
         except:
             pass
+
+# ═══════════════════════════════════════════════════════════
+# СМЕНА НИКА
+# ═══════════════════════════════════════════════════════════
+async def request_nick_change(message: Message):
+    user = users[message.from_user.id]
+    
+    # Проверка кулдауна
+    if user.get("last_nick_change"):
+        last_change = date.fromisoformat(user["last_nick_change"])
+        days_passed = (date.today() - last_change).days
+        if days_passed < NICKNAME_CHANGE_DAYS:
+            days_left = NICKNAME_CHANGE_DAYS - days_passed
+            await message.answer(f"⏳ Смена ника доступна через {days_left} дн.")
+            return
+
+    text = (
+        "📝 **СМЕНА НИКА**\n\n"
+        f"Стоимость: **{NICKNAME_CHANGE_COST} 💎**\n"
+        f"Кулдаун: **{NICKNAME_CHANGE_DAYS} дней**\n\n"
+        "Вы уверены, что хотите сменить ник?"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сменить", callback_data="confirm_nick_change")]
+    ])
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data == "confirm_nick_change")
+async def confirm_nick_change_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user = users[user_id]
+    
+    if user["diamonds"] < NICKNAME_CHANGE_COST:
+        await callback.answer(f"❌ Не хватает алмазов!\nНужно: {NICKNAME_CHANGE_COST} 💎", show_alert=True)
+        return
+        
+    user["state"] = "changing_nickname"
+    await callback.message.answer("✍️ **Введите новый ник:**\n(Максимум 15 символов)", reply_markup=cancel_menu(), parse_mode="Markdown")
+    await callback.answer()
+
+# ═══════════════════════════════════════════════════════════
+# АДМИН ПАНЕЛЬ
+# ═══════════════════════════════════════════════════════════
+async def open_admin_panel(message: Message):
+    user_id = message.from_user.id
+    if not admin_panel.is_admin(user_id):
+        await message.answer("⛔ **Вход только для администрации!**", parse_mode="Markdown")
+        return
+    
+    kb = admin_panel.get_users_keyboard(users, page=0)
+    await message.answer("👮‍♂️ **Панель Администратора**\nСписок игроков:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("admin_page_"))
+async def admin_pagination(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if not admin_panel.is_admin(user_id): return
+    
+    page = int(callback.data.replace("admin_page_", ""))
+    kb = admin_panel.get_users_keyboard(users, page=page)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb)
+    except: pass
+
+@dp.callback_query(F.data.startswith("admin_view_"))
+async def admin_view_user(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if not admin_panel.is_admin(user_id): return
+    
+    parts = callback.data.split("_")
+    target_tg_id = int(parts[2])
+    page = int(parts[3])
+    
+    target_user = users.get(target_tg_id)
+    if not target_user:
+        await callback.answer("Игрок не найден", show_alert=True)
+        return
+        
+    text = admin_panel.get_user_profile_text(target_user, target_tg_id)
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
 # ═══════════════════════════════════════════════════════════
 # НАСТРОЙКИ
@@ -538,7 +674,8 @@ async def tap(callback: CallbackQuery):
     check_daily_reset(user)
     now = datetime.now().timestamp()
     
-    if now - user["last_tap_time"] < 0.7:
+    # --- ОБНОВЛЕНО: Лимит тапа 0.5 секунды
+    if now - user["last_tap_time"] < 0.5:
         await callback.answer(random.choice(funny_spam), show_alert=False)
         return
         
@@ -812,12 +949,11 @@ async def profile(message: Message):
     total_chance = (BASE_DIAMOND_CHANCE + user["diamond_chance_bonus"]) * 100
     safe_nick = str(user['nickname']).replace("<", "&lt;").replace(">", "&gt;")
     
-    # <--- ДОБАВЛЕНО: ПОЛУЧЕНИЕ ДАТЫ (ИЛИ "Неизвестно" ДЛЯ СТАРЫХ)
     reg_date = user.get("registration_date", "Неизвестно") 
             
     text = (f"👑 <b>ТВОЙ ПРОФИЛЬ</b> 👑\n\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
-            f"📅 В игре с: {reg_date}\n" # <--- ДОБАВЛЕНО: ОТОБРАЖЕНИЕ ДАТЫ
+            f"📅 В игре с: {reg_date}\n"
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
             f"💰 Баланс: {user['balance']:,} монет\n"
             f"💎 Алмазы: {user['diamonds']} (Шанс: {total_chance:.1f}%)\n"
@@ -831,7 +967,7 @@ async def profile(message: Message):
             f"🖐️ Палец: {current_finger_name}\n\n"
             f"Ты уже на пути к миллиарду! 🚀").replace(",", " ")
             
-    # Используем новое меню профиля
+    # --- ИЗМЕНЕНО: ОТКРЫВАЕМ МЕНЮ ПРОФИЛЯ, А НЕ ГЛАВНОЕ
     await message.answer(text, parse_mode="HTML", reply_markup=profile_menu())
 
 # ═══════════════════════════════════════════════════════════
