@@ -1,1 +1,1 @@
-BOT_TOKEN = '8304485175:AAFVbImWyTyMYuQ4hxuaTUwx83Svth3eB38'  # Замени на свой от BotFather
+BOT_TOKEN = '8304485175:AAFVbImWyTyMYuQ4hxuaTUwx83Svth3eB38'
