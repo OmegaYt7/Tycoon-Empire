@@ -1,4 +1,4 @@
-import psycopg2
+from psycopg2cffi import psycopg2
 import json
 import logging
 from datetime import datetime, timedelta
