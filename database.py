@@ -2,37 +2,30 @@ import asyncpg
 import json
 import logging
 import asyncio
-from datetime import datetime, date, timedelta
-from typing import Dict, Any
+from datetime import datetime, timedelta
 
-# ⚠️ ВНИМАНИЕ: ВАША СТРОКА ПОДКЛЮЧЕНИЯ
-# Убедитесь, что DB_URI содержит корректный URL от Neon DB.
+# Твоя строка подключения к Neon DB
 DB_URI = "postgresql://neondb_owner:npg_sC4FRJhbmk8d@ep-billowing-credit-a4q1jnbn-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
 # Глобальная переменная для пула соединений
 pool = None
 
-async def init_db_pool():
-    """Инициализирует пул соединений при запуске бота."""
+async def create_pool():
+    """Создает пул соединений при запуске бота."""
     global pool
-    if pool is None:
-        try:
-            # Создание пула соединений
-            pool = await asyncpg.create_pool(
-                DB_URI,
-                min_size=5,  # Минимальное количество соединений
-                max_size=10, # Максимальное количество соединений
-            )
-            logging.warning("✅ Пул соединений PostgreSQL создан.")
-        except Exception as e:
-            logging.error(f"❌ Ошибка создания пула asyncpg: {e}")
-            return False
-    return True
+    try:
+        pool = await asyncpg.create_pool(dsn=DB_URI)
+        logging.warning("✅ Успешное подключение к Neon DB (asyncpg)")
+    except Exception as e:
+        logging.error(f"❌ Ошибка подключения к БД: {e}")
 
 async def create_table():
-    """Создает таблицу в PostgreSQL, если она не существует."""
-    await init_db_pool()
+    """Создает таблицу, если она не существует."""
+    if pool is None:
+        await create_pool()
+        
     async with pool.acquire() as conn:
+        # Используем JSONB для хранения всей структуры данных игрока
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -45,87 +38,136 @@ async def create_table():
                 json_data JSONB
             )
         ''')
-    logging.warning("✅ Таблица users проверена/создана.")
 
-
-async def save_all_users(users_dict: Dict[int, Dict[str, Any]]):
-    """Сохраняет ВСЕХ пользователей из памяти в БД."""
+async def save_all_users(users_dict):
+    """
+    Асинхронно сохраняет всех пользователей.
+    Использует массовую вставку (executemany) для высокой скорости.
+    """
     if not users_dict:
         return
-    
-    await init_db_pool()
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            today = datetime.now().date()
-            data_to_insert = []
-            
-            for user_id, data in users_dict.items():
-                temp_data = data.copy()
-                json_data = json.dumps(temp_data, ensure_ascii=False)
-                
-                # Подготовка данных для UPSERT
-                data_to_insert.append((
-                    user_id,
-                    data.get('username', 'Guest'),
-                    data.get('nickname', 'Unknown'),
-                    data.get('balance', 0),
-                    data.get('diamonds', 0),
-                    data.get('referrals', 0),
-                    today,
-                    json_data
-                ))
 
-            # Используем UPSERT (INSERT OR UPDATE)
-            query = '''
-                INSERT INTO users (user_id, username, nickname, balance, diamonds, referrals, last_active, json_data) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) 
-                ON CONFLICT (user_id) DO UPDATE SET 
-                    username = EXCLUDED.username,
-                    nickname = EXCLUDED.nickname,
-                    balance = EXCLUDED.balance,
-                    diamonds = EXCLUDED.diamonds,
-                    referrals = EXCLUDED.referrals,
-                    last_active = EXCLUDED.last_active,
-                    json_data = EXCLUDED.json_data;
-            '''
-            await conn.executemany(query, data_to_insert)
-            logging.warning(f"💾 Сохранено {len(data_to_insert)} пользователей.")
+    if pool is None:
+        await create_pool()
 
+    today = datetime.now().date()
+    data_list = []
+
+    # Подготовка данных для массовой вставки
+    for user_id, data in users_dict.items():
+        # Копируем данные, чтобы не менять оригинал
+        temp_data = data.copy()
+        
+        # Сериализуем JSON
+        json_str = json.dumps(temp_data, ensure_ascii=False)
+        
+        # Извлекаем основные поля для колонок
+        username = data.get('username', 'Guest')
+        nickname = data.get('nickname', 'Unknown')
+        balance = data.get('balance', 0)
+        diamonds = data.get('diamonds', 0)
+        referrals = data.get('referrals', 0)
+
+        # Добавляем кортеж данных в список
+        data_list.append((
+            user_id, username, nickname, balance, diamonds, referrals, today, json_str
+        ))
+
+    # Выполняем запрос
+    query = '''
+        INSERT INTO users (user_id, username, nickname, balance, diamonds, referrals, last_active, json_data)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (user_id) DO UPDATE SET
+            username = EXCLUDED.username,
+            nickname = EXCLUDED.nickname,
+            balance = EXCLUDED.balance,
+            diamonds = EXCLUDED.diamonds,
+            referrals = EXCLUDED.referrals,
+            last_active = EXCLUDED.last_active,
+            json_data = EXCLUDED.json_data
+    '''
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.executemany(query, data_list)
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении базы: {e}")
 
 async def load_all_users():
     """Загружает всех пользователей из БД в словарь при запуске."""
-    await init_db_pool()
-    await create_table() # Гарантируем, что таблица есть
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT user_id, json_data FROM users")
+    if pool is None:
+        await create_pool()
+        
+    await create_table()
+    
+    # Удаляем неактивных перед загрузкой
+    await delete_inactive_users()
     
     loaded_users = {}
-    for record in rows:
-        user_id = record['user_id']
-        user_data = record['json_data']
-        loaded_users[user_id] = user_data
+    try:
+        async with pool.acquire() as conn:
+            # Забираем только user_id и json_data, так как в json_data есть всё
+            rows = await conn.fetch("SELECT user_id, json_data FROM users")
+            
+            for row in rows:
+                user_id = row['user_id']
+                json_val = row['json_data']
+                
+                # asyncpg автоматически декодирует JSONB в dict или str
+                if isinstance(json_val, str):
+                    user_data = json.loads(json_val)
+                else:
+                    user_data = json_val
+                
+                loaded_users[user_id] = user_data
+                
+        logging.warning(f"Загружено {len(loaded_users)} пользователей из Neon DB.")
+    except Exception as e:
+        logging.error(f"Ошибка загрузки пользователей: {e}")
         
-    logging.warning(f"Загружено {len(loaded_users)} пользователей из Neon DB.")
     return loaded_users
 
-async def export_users_to_json_file(filename: str = "users_export.json"):
-    """
-    Выгружает всю базу в JSON файл.
-    (Для использования в main.py, например, в команде для админа)
-    """
-    await init_db_pool()
-    async with pool.acquire() as conn:
-        # Извлекаем только поле json_data, которое содержит полный словарь пользователя
-        rows = await conn.fetch("SELECT json_data FROM users")
+async def delete_inactive_users(days=90):
+    """Удаляет пользователей, которые не заходили более 90 дней."""
+    if pool is None:
+        await create_pool()
+        
+    cutoff_date = datetime.now().date() - timedelta(days=days)
     
-    all_users_data = [row['json_data'] for row in rows]
-
     try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(all_users_data, f, ensure_ascii=False, indent=4)
-        logging.warning(f"📤 Данные успешно выгружены в {filename}")
-        return True
+        async with pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM users WHERE last_active < $1", cutoff_date)
+            # result возвращает строку типа "DELETE 5"
+            deleted_count = result.split()[-1]
+            if int(deleted_count) > 0:
+                logging.warning(f"🧹 Удалено {deleted_count} неактивных профилей.")
     except Exception as e:
-        logging.error(f"Ошибка при выгрузке данных в JSON: {e}")
-        return False
+        logging.error(f"Ошибка удаления неактивных: {e}")
+
+async def export_users_to_json_file():
+    """Выгружает базу в JSON файл и возвращает имя файла."""
+    if pool is None:
+        await create_pool()
+        
+    try:
+        async with pool.acquire() as conn:
+            # Берем актуальные данные прямо из БД
+            rows = await conn.fetch("SELECT json_data FROM users")
+            
+        all_data = []
+        for row in rows:
+            json_val = row['json_data']
+            if isinstance(json_val, str):
+                all_data.append(json.loads(json_val))
+            else:
+                all_data.append(json_val)
+        
+        filename = "users_export.json"
+        # Запись в файл (синхронная операция, но для админ-команды допустимо)
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(all_data, f, ensure_ascii=False, indent=4)
+            
+        return filename
+    except Exception as e:
+        logging.error(f"Ошибка экспорта: {e}")
+        raise e

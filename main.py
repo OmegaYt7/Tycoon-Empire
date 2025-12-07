@@ -29,9 +29,10 @@ users = {}
 # ═══════════════════════════════════════════════════════════
 async def autosave_loop():
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(120)
         try:
-            database.save_all_users(users)
+            # Добавлено await
+            await database.save_all_users(users)
         except Exception as e:
             logging.error(f"Ошибка автосохранения: {e}")
 
@@ -583,13 +584,21 @@ async def handle_text(message: Message):
 @dp.callback_query(F.data == "admin_export_confirm")
 async def export_data_handler(callback: CallbackQuery):
     if not admin_panel.is_admin(callback.from_user.id): return
+    
     await callback.message.edit_text("⏳ **Начинаю выгрузку...**")
+    
     try:
-        database.save_all_users(users)
-        filename = database.export_users_to_json_file()
+        # Добавлено await
+        await database.save_all_users(users)
+        
+        # Добавлено await
+        filename = await database.export_users_to_json_file()
+        
         file = FSInputFile(filename)
         await bot.send_document(callback.from_user.id, file, caption="✅ **Полная база данных игроков**")
+        
         os.remove(filename)
+        
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка выгрузки: {e}")
 
@@ -751,9 +760,9 @@ async def about_game(message: Message):
         "ℹ️ **О ИГРЕ: Tycoon Empire**\n\n"
         "Строй свою империю, кликай и побеждай!\n\n"
         "📢 **Наш канал:** [TycoonEmpireOfficial](https://t.me/TycoonEmpireOfficial)\n"
-        "📄 **Вся информация:** [Читать тут](https://teletype.in/@shadowdragonr7/TycoonEmpireBot)\n\n"
+        "📄 **Вся информация:** [Читать тут](https://teletype.in/@shadowdragonr/TycoonEmpireBot)\n\n"
         "✍️ **Поддержка / Предложения:**\n"
-        "Нашли ошибку? Есть идея? Пишите: [ShadowDragonR7](https://t.me/ShadowDragonR7)"
+        "Нашли ошибку? Есть идея? Пишите: [ShadowDragonR](https://t.me/ShadowDragonR)"
     )
     await message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -1321,8 +1330,16 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    users.update(database.load_all_users())
+    # Сначала создаем пул подключений
+    await database.create_pool()
+    
+    # Загрузка с await
+    loaded_data = await database.load_all_users()
+    users.update(loaded_data)
+    
+    # Запуск фонового сохранения
     asyncio.create_task(autosave_loop())
+    
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
