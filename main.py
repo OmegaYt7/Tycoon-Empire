@@ -1330,14 +1330,27 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # Эта функция теперь просто проверяет соединение с сайтом Supabase
-    await database.create_pool()
+    # 1. Сначала создаем пул/сессию (Подключение к БД)
+    await database.create_pool() 
     
-    # Загрузка
-    loaded_data = await database.load_all_users()
-    users.update(loaded_data)
-    
-    # Запуск фонового сохранения
-    asyncio.create_task(autosave_loop())
-    
-    await dp.start_polling(bot)
+    try:
+        # 2. Загружаем всех пользователей из БД в оперативную память
+        loaded_data = await database.load_all_users()
+        users.update(loaded_data)
+        
+        # 3. Запуск фонового сохранения
+        asyncio.create_task(autosave_loop())
+        
+        # 4. Запускаем бота
+        await dp.start_polling(bot)
+        
+    finally:
+        # 5. НОВОЕ! Обязательно закрываем сессию aiohttp при выходе
+        await database.close_session()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Нормальный выход
+        pass
