@@ -382,7 +382,7 @@ async def start(message: Message):
     user_id = message.from_user.id
     
     if user_id not in users:
-        database.create_table() 
+        await database.create_table() 
         
         upgrades = {info["key"]: 0 for info in upgrades_info}
         upgrades["wooden_finger"] = 1
