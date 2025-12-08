@@ -1330,10 +1330,10 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # Сначала создаем пул подключений
+    # Эта функция теперь просто проверяет соединение с сайтом Supabase
     await database.create_pool()
     
-    # Загрузка с await
+    # Загрузка
     loaded_data = await database.load_all_users()
     users.update(loaded_data)
     
@@ -1341,6 +1341,3 @@ async def main():
     asyncio.create_task(autosave_loop())
     
     await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())

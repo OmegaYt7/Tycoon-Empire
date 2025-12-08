@@ -1,173 +1,165 @@
-import asyncpg
+import aiohttp
 import json
 import logging
 import asyncio
 from datetime import datetime, timedelta
 
-# Твоя строка подключения к Neon DB
-DB_URI = "postgresql://neondb_owner:npg_sC4FRJhbmk8d@ep-billowing-credit-a4q1jnbn-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+# ═══════════════════════════════════════════════════════════
+# КОНФИГУРАЦИЯ SUPABASE
+# ═══════════════════════════════════════════════════════════
 
-# Глобальная переменная для пула соединений
-pool = None
+SUPABASE_URL = "https://tuvqserdclbgloysblrx.supabase.co"
+SUPABASE_KEY = "sb_secret_bDIUtmYZ2Zx5Rz3EauEhlw_sbrmR6y9" # Твой секретный ключ
+
+# Заголовки для каждого запроса
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal" # Не возвращать данные после записи (экономит трафик)
+}
+
+# ═══════════════════════════════════════════════════════════
+# ФУНКЦИИ БАЗЫ ДАННЫХ
+# ═══════════════════════════════════════════════════════════
 
 async def create_pool():
-    """Создает пул соединений при запуске бота."""
-    global pool
-    try:
-        pool = await asyncpg.create_pool(dsn=DB_URI)
-        logging.warning("✅ Успешное подключение к Neon DB (asyncpg)")
-    except Exception as e:
-        logging.error(f"❌ Ошибка подключения к БД: {e}")
+    """
+    Для совместимости с main.py. 
+    В aiohttp пулы работают иначе, но мы можем просто проверить соединение.
+    """
+    logging.warning("✅ Инициализация HTTP сессии для Supabase...")
+    # Можно сделать тестовый запрос, чтобы убедиться, что всё ок
+    async with aiohttp.ClientSession() as session:
+        url = f"{SUPABASE_URL}/rest/v1/"
+        async with session.get(url, headers=HEADERS) as resp:
+            if resp.status == 200:
+                logging.warning("✅ Соединение с Supabase установлено!")
+            else:
+                logging.error(f"❌ Ошибка соединения с Supabase: {resp.status}")
 
 async def create_table():
-    """Создает таблицу, если она не существует."""
-    if pool is None:
-        await create_pool()
-        
-    async with pool.acquire() as conn:
-        # Используем JSONB для хранения всей структуры данных игрока
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT,
-                nickname TEXT,
-                balance BIGINT,
-                diamonds INTEGER,
-                referrals INTEGER,
-                last_active DATE,
-                json_data JSONB
-            )
-        ''')
+    """
+    В REST API таблицу лучше создавать через интерфейс Supabase (SQL Editor).
+    Оставляем функцию пустой, чтобы main.py не ломался при вызове.
+    """
+    pass
 
 async def save_all_users(users_dict):
     """
-    Асинхронно сохраняет всех пользователей.
-    Использует массовую вставку (executemany) для высокой скорости.
+    Сохраняет всех пользователей через HTTP запрос (UPSERT).
     """
     if not users_dict:
         return
 
-    if pool is None:
-        await create_pool()
-
-    today = datetime.now().date()
+    today = datetime.now().strftime("%Y-%m-%d")
     data_list = []
 
-    # Подготовка данных для массовой вставки
+    # Подготовка данных для отправки
     for user_id, data in users_dict.items():
-        # Копируем данные, чтобы не менять оригинал
-        temp_data = data.copy()
+        # Подготавливаем JSON объект для поля json_data
+        # Важно: Supabase требует, чтобы json был объектом или строкой, 
+        # aiohttp сам сериализует dict в json при отправке, но для поля jsonb 
+        # лучше отправлять словарь как есть, Supabase поймет.
         
-        # Сериализуем JSON
-        json_str = json.dumps(temp_data, ensure_ascii=False)
-        
-        # Извлекаем основные поля для колонок
-        username = data.get('username', 'Guest')
-        nickname = data.get('nickname', 'Unknown')
-        balance = data.get('balance', 0)
-        diamonds = data.get('diamonds', 0)
-        referrals = data.get('referrals', 0)
+        row = {
+            "user_id": user_id,
+            "username": data.get('username', 'Guest'),
+            "nickname": data.get('nickname', 'Unknown'),
+            "balance": data.get('balance', 0),
+            "diamonds": data.get('diamonds', 0),
+            "referrals": data.get('referrals', 0),
+            "last_active": today,
+            "json_data": data # Весь объект игрока кладем в колонку json_data
+        }
+        data_list.append(row)
 
-        # Добавляем кортеж данных в список
-        data_list.append((
-            user_id, username, nickname, balance, diamonds, referrals, today, json_str
-        ))
+    # Разбиваем на пачки по 100 штук, чтобы не превысить лимиты запроса
+    chunk_size = 100
+    url = f"{SUPABASE_URL}/rest/v1/users"
+    
+    # Заголовок для UPSERT (слияние дубликатов по ID)
+    upsert_headers = HEADERS.copy()
+    upsert_headers["Prefer"] = "resolution=merge-duplicates"
 
-    # Выполняем запрос
-    query = '''
-        INSERT INTO users (user_id, username, nickname, balance, diamonds, referrals, last_active, json_data)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (user_id) DO UPDATE SET
-            username = EXCLUDED.username,
-            nickname = EXCLUDED.nickname,
-            balance = EXCLUDED.balance,
-            diamonds = EXCLUDED.diamonds,
-            referrals = EXCLUDED.referrals,
-            last_active = EXCLUDED.last_active,
-            json_data = EXCLUDED.json_data
-    '''
-
-    try:
-        async with pool.acquire() as conn:
-            await conn.executemany(query, data_list)
-    except Exception as e:
-        logging.error(f"Ошибка при сохранении базы: {e}")
+    async with aiohttp.ClientSession() as session:
+        for i in range(0, len(data_list), chunk_size):
+            chunk = data_list[i:i + chunk_size]
+            try:
+                async with session.post(url, headers=upsert_headers, json=chunk) as resp:
+                    if resp.status not in [200, 201, 204]:
+                        text = await resp.text()
+                        logging.error(f"❌ Ошибка сохранения Supabase: {resp.status} - {text}")
+            except Exception as e:
+                logging.error(f"❌ Ошибка запроса к Supabase: {e}")
 
 async def load_all_users():
-    """Загружает всех пользователей из БД в словарь при запуске."""
-    if pool is None:
-        await create_pool()
-        
-    await create_table()
-    
-    # Удаляем неактивных перед загрузкой
-    await delete_inactive_users()
-    
+    """Загружает всех пользователей из Supabase через GET запрос."""
     loaded_users = {}
+    url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
+    
     try:
-        async with pool.acquire() as conn:
-            # Забираем только user_id и json_data, так как в json_data есть всё
-            rows = await conn.fetch("SELECT user_id, json_data FROM users")
-            
-            for row in rows:
-                user_id = row['user_id']
-                json_val = row['json_data']
-                
-                # asyncpg автоматически декодирует JSONB в dict или str
-                if isinstance(json_val, str):
-                    user_data = json.loads(json_val)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS) as resp:
+                if resp.status == 200:
+                    rows = await resp.json()
+                    for row in rows:
+                        user_id = row['user_id']
+                        user_data = row['json_data']
+                        
+                        # Если вдруг пришло строкой (бывает в разных версиях)
+                        if isinstance(user_data, str):
+                            user_data = json.loads(user_data)
+                            
+                        loaded_users[int(user_id)] = user_data
+                    
+                    logging.warning(f"📥 Загружено {len(loaded_users)} пользователей из Supabase.")
                 else:
-                    user_data = json_val
-                
-                loaded_users[user_id] = user_data
-                
-        logging.warning(f"Загружено {len(loaded_users)} пользователей из Neon DB.")
+                    text = await resp.text()
+                    logging.error(f"❌ Ошибка загрузки из Supabase: {resp.status} - {text}")
+                    
     except Exception as e:
-        logging.error(f"Ошибка загрузки пользователей: {e}")
+        logging.error(f"❌ Критическая ошибка загрузки: {e}")
         
     return loaded_users
 
 async def delete_inactive_users(days=90):
-    """Удаляет пользователей, которые не заходили более 90 дней."""
-    if pool is None:
-        await create_pool()
-        
-    cutoff_date = datetime.now().date() - timedelta(days=days)
+    """Удаляет неактивных пользователей."""
+    cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    
+    # Синтаксис фильтрации Supabase: last_active=lt.DATE (lt = less than / меньше чем)
+    url = f"{SUPABASE_URL}/rest/v1/users?last_active=lt.{cutoff_date}"
     
     try:
-        async with pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM users WHERE last_active < $1", cutoff_date)
-            # result возвращает строку типа "DELETE 5"
-            deleted_count = result.split()[-1]
-            if int(deleted_count) > 0:
-                logging.warning(f"🧹 Удалено {deleted_count} неактивных профилей.")
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(url, headers=HEADERS) as resp:
+                if resp.status == 204:
+                    logging.warning(f"🧹 Очистка старых пользователей выполнена.")
+                else:
+                    logging.error(f"Ошибка очистки: {resp.status}")
     except Exception as e:
-        logging.error(f"Ошибка удаления неактивных: {e}")
+        logging.error(f"Ошибка запроса очистки: {e}")
 
 async def export_users_to_json_file():
-    """Выгружает базу в JSON файл и возвращает имя файла."""
-    if pool is None:
-        await create_pool()
-        
+    """
+    Выгружает базу в файл (скачивает всё из Supabase).
+    """
+    url = f"{SUPABASE_URL}/rest/v1/users?select=json_data"
+    filename = "users_export.json"
+    
     try:
-        async with pool.acquire() as conn:
-            # Берем актуальные данные прямо из БД
-            rows = await conn.fetch("SELECT json_data FROM users")
-            
-        all_data = []
-        for row in rows:
-            json_val = row['json_data']
-            if isinstance(json_val, str):
-                all_data.append(json.loads(json_val))
-            else:
-                all_data.append(json_val)
-        
-        filename = "users_export.json"
-        # Запись в файл (синхронная операция, но для админ-команды допустимо)
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(all_data, f, ensure_ascii=False, indent=4)
-            
-        return filename
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS) as resp:
+                if resp.status == 200:
+                    rows = await resp.json()
+                    all_data = [row['json_data'] for row in rows]
+                    
+                    with open(filename, "w", encoding="utf-8") as f:
+                        json.dump(all_data, f, ensure_ascii=False, indent=4)
+                    return filename
+                else:
+                    logging.error(f"Ошибка экспорта: {resp.status}")
     except Exception as e:
         logging.error(f"Ошибка экспорта: {e}")
-        raise e
+    
+    return None
