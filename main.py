@@ -67,7 +67,7 @@ funny_spam = [
 ]
 
 DAILY_QUESTS_CONFIG = [
-    {"key": "daily_clicks", "name": "👆 Разминка пальцев", "desc": "Сделай 500 кликов за сегодня", "target": 500, "reward_diamonds": 1},
+    {"key": "daily_clicks", "name": "👆 Разминка пальцев", "desc": "Сделай 200 кликов за сегодня", "target": 200, "reward_diamonds": 1},
     {"key": "daily_upgrade", "name": "🔨 Ремонтные работы", "desc": "Улучши любое здание 1 раз", "target": 1, "reward_diamonds": 1},
     {"key": "daily_claim", "name": "💰 Сборщик дани", "desc": "Забери доход с любых зданий 10 раз", "target": 10, "reward_diamonds": 1}
 ]
@@ -176,11 +176,11 @@ main_quests_info = [
     {"key": "click_100k", "type": "clicks", "target": 100000, "name": "👆 Титан кликов", "desc": "Сделай 100 000 тапов", "rew_coins": 100000000, "rew_tap": 5000, "rew_chance": 0},
     
     # ТИП 5: ДОХОД
-    {"key": "inc_100", "type": "income", "target": 100, "name": "💤 Маленький ручеек", "desc": "Достигни дохода 100 монет/мин", "rew_coins": 15000, "rew_tap": 0, "rew_chance": 0},
-    {"key": "inc_1k", "type": "income", "target": 1000, "name": "💤 Денежная река", "desc": "Достигни дохода 1 000 монет/мин", "rew_coins": 150000, "rew_tap": 0, "rew_chance": 0},
-    {"key": "inc_5k", "type": "income", "target": 5000, "name": "💤 Нефтяная вышка", "desc": "Достигни дохода 5 000 монет/мин", "rew_coins": 1500000, "rew_tap": 0, "rew_chance": 0},
-    {"key": "inc_20k", "type": "income", "target": 20000, "name": "💤 Банковский магнат", "desc": "Достигни дохода 20 000 монет/мин", "rew_coins": 10000000, "rew_tap": 0, "rew_chance": 0},
-    {"key": "inc_100k", "type": "income", "target": 100000, "name": "💤 Хозяин мира", "desc": "Достигни дохода 100 000 монет/мин", "rew_coins": 100000000, "rew_tap": 0, "rew_chance": 0},
+    {"key": "inc_100", "type": "income", "target": 1000, "name": "💤 Маленький ручеек", "desc": "Достигни дохода 1 000 монет/мин", "rew_coins": 100000, "rew_tap": 0, "rew_chance": 0},
+    {"key": "inc_1k", "type": "income", "target": 5000, "name": "💤 Денежная река", "desc": "Достигни дохода 5 000 монет/мин", "rew_coins": 1000000, "rew_tap": 0, "rew_chance": 0},
+    {"key": "inc_5k", "type": "income", "target": 10000, "name": "💤 Нефтяная вышка", "desc": "Достигни дохода 10 000 монет/мин", "rew_coins": 10000000, "rew_tap": 0, "rew_chance": 0},
+    {"key": "inc_20k", "type": "income", "target": 100000, "name": "💤 Банковский магнат", "desc": "Достигни дохода 100 000 монет/мин", "rew_coins": 100000000, "rew_tap": 0, "rew_chance": 0},
+    {"key": "inc_100k", "type": "income", "target": 1000000, "name": "💤 Хозяин мира", "desc": "Достигни дохода 1 000 000 монет/мин", "rew_coins": 10000000000, "rew_tap": 0, "rew_chance": 0},
     
     # ТИП 6: ПОТРАТИТЬ
     {"key": "spend_100k", "type": "spent", "target": 100000, "name": "💸 Шопоголик", "desc": "Потрать в сумме 100 000 монет", "rew_coins": 10000, "rew_tap": 0, "rew_chance": 0},
@@ -382,7 +382,7 @@ async def start(message: Message):
     user_id = message.from_user.id
     
     if user_id not in users:
-        database.create_table() 
+        await database.create_table() 
         
         upgrades = {info["key"]: 0 for info in upgrades_info}
         upgrades["wooden_finger"] = 1
@@ -1030,8 +1030,8 @@ async def profile(message: Message):
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
             f"💰 Баланс: {user['balance']:,} монет\n"
             f"💎 Алмазы: {user['diamonds']:,} (Шанс: {total_chance:.1f}%)\n"
-            f"🔥 За один тап: +{tap_bonus_fmt} монет\n"
-            f"🕒 Пассивный доход: +{user['passive_per_minute']:,} монет/мин\n"
+            f"🔥 За один тап: + {tap_bonus_fmt} монет\n"
+            f"🕒 Пассивный доход: + {user['passive_per_minute']:,} монет/мин\n"
             f"👆 Всего кликов: {user['total_clicks']:,}\n"
             f"💸 Всего потрачено: {user['total_spent']:,}\n"
             f"👥 Друзей: {user['referrals']:,}\n"
@@ -1330,14 +1330,27 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # Эта функция теперь просто проверяет соединение с сайтом Supabase
-    await database.create_pool()
+    # 1. Сначала создаем пул/сессию (Подключение к БД)
+    await database.create_pool() 
     
-    # Загрузка
-    loaded_data = await database.load_all_users()
-    users.update(loaded_data)
-    
-    # Запуск фонового сохранения
-    asyncio.create_task(autosave_loop())
-    
-    await dp.start_polling(bot)
+    try:
+        # 2. Загружаем всех пользователей из БД в оперативную память
+        loaded_data = await database.load_all_users()
+        users.update(loaded_data)
+        
+        # 3. Запуск фонового сохранения
+        asyncio.create_task(autosave_loop())
+        
+        # 4. Запускаем бота
+        await dp.start_polling(bot)
+        
+    finally:
+        # 5. НОВОЕ! Обязательно закрываем сессию aiohttp при выходе
+        await database.close_session()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Нормальный выход
+        pass

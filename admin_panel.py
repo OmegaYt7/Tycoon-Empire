@@ -2,7 +2,7 @@ import math
 import asyncio
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-# ID Администраторов
+# ID Администраторов (Замените или добавьте ID, если их несколько)
 ADMIN_IDS = [5342285170]
 
 ITEMS_PER_PAGE = 10
@@ -63,11 +63,12 @@ def broadcast_time_kb(msg_type):
     ])
 
 # ═══════════════════════════════════════════════════════════
-# ЛОГИКА ПРОСМОТРА ИГРОКОВ
+# ЛОГИКА ПРОСМОТРА ИГРОКОВ (ИСПРАВЛЕНО)
 # ═══════════════════════════════════════════════════════════
 
 def get_users_keyboard(users_dict, page=0):
     # Сортировка по Game ID (custom_id) от большего к меньшему
+    # Используем str(), чтобы избежать ошибок сравнения
     users_list = sorted(users_dict.items(), key=lambda x: str(x[1].get('custom_id', '0')), reverse=True)
     
     total_items = len(users_list)
@@ -78,9 +79,18 @@ def get_users_keyboard(users_dict, page=0):
     
     kb = []
     for tg_id, data in current_users:
-        nick = data.get('nickname', 'Без ника')[:10]
+        # --- ИСПРАВЛЕНИЕ ОШИБКИ NONE TYPE ---
+        # Получаем никнейм. Если он None (игрок только зашел), берем 'Без ника'.
+        raw_nick = data.get('nickname')
+        # Если raw_nick это None или пустая строка, ставим дефолт
+        nick_str = str(raw_nick) if raw_nick else "Без ника"
+        
+        # Теперь можно безопасно обрезать
+        nick_display = nick_str[:10]
+        # -------------------------------------
+        
         game_id = data.get('custom_id', '???')
-        btn_text = f"{game_id} | {nick}"
+        btn_text = f"{game_id} | {nick_display}"
         kb.append([InlineKeyboardButton(text=btn_text, callback_data=f"admin_view_{tg_id}_{page}")])
     
     nav_row = []
@@ -98,7 +108,6 @@ def get_users_keyboard(users_dict, page=0):
 def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     """
     Расширенный профиль игрока для админа.
-    passive_income и finger_name передаются из main.py, так как требуют расчетов.
     """
     username = user_data.get('username')
     
@@ -114,12 +123,12 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     passive = f"{passive_income:,}".replace(",", " ")
     tap_power = f"{user_data.get('tap_mult', 1):,}".replace(",", " ")
     
-    # Последняя активность (из БД или памяти)
+    # Последняя активность
     last_active = user_data.get('last_active') or user_data.get('registration_date', 'Нет данных')
 
     text = (
         f"🕵️‍♂️ <b>ПРОФИЛЬ ИГРОКА (Админ)</b>\n\n"
-        f"🆔 Game ID: <code>{user_data['custom_id']}</code>\n"
+        f"🆔 Game ID: <code>{user_data.get('custom_id', '???')}</code>\n"
         f"👤 Ник: {user_data.get('nickname', 'Не задан')}\n"
         f"🔗 Telegram: {tg_link} (ID: <code>{tg_id}</code>)\n"
         f"📅 Регистрация: {user_data.get('registration_date', 'Неизвестно')}\n"
@@ -138,7 +147,7 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     return text
 
 # ═══════════════════════════════════════════════════════════
-# ЛОГИКА РАССЫЛКИ (ТЕПЕРЬ ЗДЕСЬ)
+# ЛОГИКА РАССЫЛКИ
 # ═══════════════════════════════════════════════════════════
 
 def get_broadcast_text(msg_type, minutes):
