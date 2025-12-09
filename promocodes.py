@@ -31,7 +31,7 @@ PROMO_DATA = {
         "coins": 1000,
         "diamonds": 1,
         "tap_bonus": 0,
-        "expires": "2026-12-7" 
+        "expires": "2026-12-8" 
     }
 }
 
