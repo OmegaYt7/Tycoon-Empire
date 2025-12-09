@@ -15,14 +15,21 @@ SUPABASE_KEY = "sb_secret_bDIUtmYZ2Zx5Rz3EauEhlw_sbrmR6y9"
 # Глобальная переменная для HTTP сессии AIOHTTP
 http_session = None
 
+# Глобальная переменная для HTTP сессии AIOHTTP
+http_session = None
+
 # Заголовки для каждого запроса
 # Добавлен Connection: keep-alive для стабильности
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
+<<<<<<< HEAD
     "Prefer": "return=minimal",
     "Connection": "keep-alive"
+=======
+    "Prefer": "return=minimal" # Не возвращать данные после записи
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
 }
 
 # ═══════════════════════════════════════════════════════════
@@ -33,9 +40,13 @@ async def create_pool():
     """Создает глобальную HTTP сессию для Supabase."""
     global http_session
     if http_session is None:
+<<<<<<< HEAD
         # Увеличиваем таймауты для стабильности
         timeout = aiohttp.ClientTimeout(total=30, connect=10)
         http_session = aiohttp.ClientSession(headers=HEADERS, timeout=timeout)
+=======
+        http_session = aiohttp.ClientSession(headers=HEADERS)
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
         logging.warning("✅ Инициализация глобальной HTTP сессии для Supabase...")
         
         # Проверка соединения
@@ -68,9 +79,13 @@ async def save_all_users(users_dict):
     global http_session
     if http_session is None:
         logging.error("❌ Сессия не инициализирована при сохранении!")
+<<<<<<< HEAD
         # Пытаемся пересоздать сессию на лету, если она потерялась
         await create_pool()
         if http_session is None: return
+=======
+        return
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_list = []
@@ -94,14 +109,23 @@ async def save_all_users(users_dict):
     # Заголовок для UPSERT
     upsert_headers = {"Prefer": "resolution=merge-duplicates"} 
     
+<<<<<<< HEAD
     # Отправка данных чанками
     for i in range(0, len(data_list), chunk_size):
         chunk = data_list[i:i + chunk_size]
         try:
+=======
+    # Отправка данных
+    for i in range(0, len(data_list), chunk_size):
+        chunk = data_list[i:i + chunk_size]
+        try:
+            # Используем глобальную сессию
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
             async with http_session.post(url, headers=upsert_headers, json=chunk) as resp:
                 if resp.status not in [200, 201, 204]:
                     text = await resp.text()
                     logging.error(f"❌ Ошибка сохранения Supabase: {resp.status} - {text}")
+<<<<<<< HEAD
         
         # --- ОБРАБОТКА ОШИБОК СЕТИ ---
         except ConnectionResetError:
@@ -110,6 +134,8 @@ async def save_all_users(users_dict):
             logging.warning("⚠️ Не удалось подключиться к Supabase. Проверьте интернет.")
         except aiohttp.ServerDisconnectedError:
             logging.warning("⚠️ Сервер разорвал соединение. Попробуем позже.")
+=======
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
         except Exception as e:
             logging.error(f"❌ Ошибка запроса POST к Supabase: {e}")
 
@@ -124,6 +150,10 @@ async def load_all_users():
     url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
     
     try:
+<<<<<<< HEAD
+=======
+        # Используем глобальную сессию
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
         async with http_session.get(url) as resp:
             if resp.status == 200:
                 rows = await resp.json()
@@ -132,10 +162,14 @@ async def load_all_users():
                     user_data = row['json_data']
                     
                     if isinstance(user_data, str):
+<<<<<<< HEAD
                         try:
                             user_data = json.loads(user_data)
                         except:
                             continue # Пропускаем битые данные
+=======
+                        user_data = json.loads(user_data)
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
                         
                     loaded_users[int(user_id)] = user_data
                 

@@ -1353,4 +1353,8 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         # Нормальный выход
+<<<<<<< HEAD
         pass
+=======
+        pass
+>>>>>>> a8f8b8f234c582006e29058d380b89e2ebff9bb2
