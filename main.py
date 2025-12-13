@@ -31,7 +31,6 @@ async def autosave_loop():
     while True:
         await asyncio.sleep(120)
         try:
-            # Добавлено await
             await database.save_all_users(users)
         except Exception as e:
             logging.error(f"Ошибка автосохранения: {e}")
@@ -92,62 +91,64 @@ upgrades_info = [
     {"key": "antimatter_finger", "name": "⚫ Антиматерия", "bonus": 100000, "cost": 100000000, "funny": "Тапает так мощно, что искажает пространство."},
     {"key": "quantum_finger", "name": "🔬 Квантовый палец", "bonus": 200000, "cost": 200000000, "funny": "Тапает в нескольких реальностях одновременно."},
     
-    {"key": "magic_finger", "name": "🪄 Магический палец", "bonus": 500 000, "cost": 500000000, "funny": "Абракадабра! Монеты из воздуха."},
+    {"key": "magic_finger", "name": "🪄 Магический палец", "bonus": 500000, "cost": 500000000, "funny": "Абракадабра! Монеты из воздуха."},
     {"key": "cyber_finger", "name": "💻 Кибер-палец", "bonus": 1000000, "cost": 1000000000, "funny": "Взлом системы ради прибыли."},
     {"key": "robot_finger", "name": "🤖 Робо-палец", "bonus": 5000000, "cost": 5000000000, "funny": "Идеальная машина для заработка."},
-    {"key": "alien_finger", "name": "👽 Инопланетный палец", "bonus": 10000000, "cost": 10 000 000 000, "funny": "Технологии внеземных цивилизаций."},
-    {"key": "dragon_finger", "name": "🐉 Драконий палец", "bonus": 20000000, "cost": 20 000 000 000, "funny": "ОГНЕДЫШАЩИЙ ТАП-МОНСТР!"},
+    {"key": "alien_finger", "name": "👽 Инопланетный палец", "bonus": 10000000, "cost": 10000000000, "funny": "Технологии внеземных цивилизаций."},
+    {"key": "dragon_finger", "name": "🐉 Драконий палец", "bonus": 20000000, "cost": 20000000000, "funny": "ОГНЕДЫШАЩИЙ ТАП-МОНСТР!"},
     
-    {"key": "black_hole_finger", "name": "🕳️ Палец Чёрной Дыры", "bonus": 50000000, "cost": 50000000000, "funny": "Засасывает монеты из других галактик."},
-    {"key": "nebula_finger", "name": "🌌 Туманный палец", "bonus": 100000000, "cost": 100000000000, "funny": "Рождает новые звезды и новые капиталы."},
-    {"key": "supernova_finger", "name": "💥 Сверхновая", "bonus": 200000000, "cost": 500000000000, "funny": "Взрывная прибыль!"},
-    {"key": "neutron_finger", "name": "☢️ Нейтронный палец", "bonus": 500000000, "cost": 1000000000000, "funny": "Невероятная плотность богатства."},
-    {"key": "galactic_finger", "name": "🌀 Галактический палец", "bonus": 1000000000, "cost": 5000000000000, "funny": "Вся галактика у твоих ног."},
+    # 21-30: НОВЫЕ ПАЛЬЦЫ
+    {"key": "void_finger", "name": "⚫️ Палец Пустоты", "bonus": 50000000, "cost": 50000000000, "funny": "Тапает так, что даже само существование монет сомневается."},
+    {"key": "celestial_finger", "name": "✨ Небесный Палец", "bonus": 100000000, "cost": 100000000000, "funny": "Сверкает, как миллиард звёзд. И тапает также мощно."},
+    {"key": "harmonic_resonance", "name": "🎶 Гармоничный Резонанс", "bonus": 200000000, "cost": 500000000000, "funny": "Вибрация богатства, притягивающая монеты."},
+    {"key": "crystal_core", "name": "🔮 Кристаллическое Ядро", "bonus": 500000000, "cost": 1000000000000, "funny": "Энергия чистого, сгенерированного богатства."},
+    {"key": "poseidon_strike", "name": "🔱 Удар Посейдона", "bonus": 1000000000, "cost": 5000000000000, "funny": "Сотрясает основы рынка. И приносит триллионы."},
     
-    {"key": "infinity_finger", "name": "♾️ Палец Бесконечности", "bonus": 5000000000, "cost": 10000000000000, "funny": "Щелчок — и ты богат."},
-    {"key": "time_lord_finger", "name": "⏳ Повелитель Времени", "bonus": 10000000000, "cost": 20000000000000, "funny": "Тапает в прошлом, будущем и настоящем."},
-    {"key": "reality_bender", "name": "🧬 Искажатель Реальности", "bonus": 20000000000, "cost": 50000000000000, "funny": "Твои деньги реальны, остальное — иллюзия."},
-    {"key": "multiverse_finger", "name": "🌐 Мультивселенная", "bonus": 50000000000, "cost": 100000000000000, "funny": "Собирает дань со всех параллельных миров."},
-    {"key": "creator_finger", "name": "🙏 Палец Создателя", "bonus": 100000000000, "cost": 200000000000000, "funny": "Да будет свет... и деньги!"}
+    {"key": "cosmic_storm", "name": "🌪 Космический Шторм", "bonus": 5000000000, "cost": 10000000000000, "funny": "Вихрь кликов, который сметает все на своем пути."},
+    {"key": "paradox_finger", "name": "🌀 Парадоксальный Палец", "bonus": 10000000000, "cost": 20000000000000, "funny": "Он тапает и не тапает одновременно. Прибыль максимальна."},
+    {"key": "divine_spark", "name": "🔥 Божественная Искра", "bonus": 20000000000, "cost": 50000000000000, "funny": "Искорка, способная зажечь финансовую вселенную."},
+    {"key": "omnipower", "name": "🌟 Всемогущество", "bonus": 50000000000, "cost": 100000000000000, "funny": "Твой таповый потенциал безграничен."},
+    {"key": "world_heart", "name": "❤️ Сердце Мира", "bonus": 100000000000, "cost": 200000000000000, "funny": "Каждое биение сердца — это твоя новая монета."}
 ]
 
 # --- СПИСОК СООРУЖЕНИЙ (30 ШТУК) ---
+# upgrade_income_bonus - на сколько увеличивается доход за уровень
 buildings_info = [
     # 1-10: Начало
-    {"key": "tent", "name": "⛺ Палатка", "base_income": 1, "base_capacity": 100, "cost": 100, "upgrade_cost_base": 50, "upgrade_capacity_bonus": 50, "funny": "Живи на природе, копи мелочь."},
-    {"key": "broken_shack", "name": "🛖 Сарай", "base_income": 5, "base_capacity": 500, "cost": 500, "upgrade_cost_base": 100, "upgrade_capacity_bonus": 250, "funny": "Лучше, чем ничего."},
-    {"key": "hut", "name": "🏠 Хижина", "base_income": 10, "base_capacity": 1000, "cost": 1000, "upgrade_cost_base": 300, "upgrade_capacity_bonus": 500, "funny": "Уютно и прибыльно."},
-    {"key": "coffee_stand", "name": "☕ Кофейня", "base_income": 15, "base_capacity": 2000, "cost": 5000, "upgrade_cost_base": 1 00, "upgrade_capacity_bonus": 1 000, "funny": "Кофе с собой! Клиенты в восторге."},
-    {"key": "small_farm", "name": "🚜 Ферма", "base_income": 30, "base_capacity": 5000, "cost": 10000, "upgrade_cost_base": 5000, "upgrade_capacity_bonus": 2 500, "funny": "Экологически чистые монеты."},
-    {"key": "shop", "name": "🛒 Магазин", "base_income": 50, "base_capacity": 10000, "cost": 50000, "upgrade_cost_base": 10000, "upgrade_capacity_bonus": 5 000, "funny": "Купи-продай."},
-    {"key": "gas_station", "name": "⛽ Заправка", "base_income": 100, "base_capacity": 20000, "cost": 200000, "upgrade_cost_base": 50000, "upgrade_capacity_bonus": 7500, "funny": "Бензин нынче дорогой."},
-    {"key": "workshop", "name": "🛠️ Мастерская", "base_income": 250, "base_capacity": 50000, "cost": 500000, "upgrade_cost_base": 100000, "upgrade_capacity_bonus": 15000, "funny": "Работа кипит."},
-    {"key": "warehouse", "name": "🏬 Склад", "base_income": 500, "base_capacity": 100000, "cost": 1000000, "upgrade_cost_base": 250000, "upgrade_capacity_bonus": 30000, "funny": "Место для твоих гор золота."},
-    {"key": "hotel", "name": "🏨 Отель", "base_income": 1000, "base_capacity": 200000, "cost": 2000000, "upgrade_cost_base": 500000, "upgrade_capacity_bonus": 60000, "funny": "Все включено, особенно прибыль."},
+    {"key": "tent", "name": "⛺ Палатка", "base_income": 1, "upgrade_income_bonus": 1, "base_capacity": 100, "cost": 100, "upgrade_cost_base": 50, "upgrade_capacity_bonus": 50, "funny": "Живи на природе, копи мелочь."},
+    {"key": "broken_shack", "name": "🛖 Сарай", "base_income": 5, "upgrade_income_bonus": 5, "base_capacity": 500, "cost": 500, "upgrade_cost_base": 100, "upgrade_capacity_bonus": 250, "funny": "Лучше, чем ничего."},
+    {"key": "hut", "name": "🏠 Хижина", "base_income": 10, "upgrade_income_bonus": 10, "base_capacity": 1000, "cost": 1000, "upgrade_cost_base": 300, "upgrade_capacity_bonus": 500, "funny": "Уютно и прибыльно."},
+    {"key": "coffee_stand", "name": "☕ Кофейня", "base_income": 15, "upgrade_income_bonus": 15, "base_capacity": 2000, "cost": 5000, "upgrade_cost_base": 1000, "upgrade_capacity_bonus": 1000, "funny": "Кофе с собой! Клиенты в восторге."},
+    {"key": "small_farm", "name": "🚜 Ферма", "base_income": 30, "upgrade_income_bonus": 30, "base_capacity": 5000, "cost": 10000, "upgrade_cost_base": 5000, "upgrade_capacity_bonus": 2500, "funny": "Экологически чистые монеты."},
+    {"key": "shop", "name": "🛒 Магазин", "base_income": 50, "upgrade_income_bonus": 50, "base_capacity": 10000, "cost": 50000, "upgrade_cost_base": 10000, "upgrade_capacity_bonus": 5000, "funny": "Купи-продай."},
+    {"key": "gas_station", "name": "⛽ Заправка", "base_income": 100, "upgrade_income_bonus": 100, "base_capacity": 20000, "cost": 200000, "upgrade_cost_base": 50000, "upgrade_capacity_bonus": 7500, "funny": "Бензин нынче дорогой."},
+    {"key": "workshop", "name": "🛠️ Мастерская", "base_income": 250, "upgrade_income_bonus": 250, "base_capacity": 50000, "cost": 500000, "upgrade_cost_base": 100000, "upgrade_capacity_bonus": 15000, "funny": "Работа кипит."},
+    {"key": "warehouse", "name": "🏬 Склад", "base_income": 500, "upgrade_income_bonus": 500, "base_capacity": 100000, "cost": 1000000, "upgrade_cost_base": 250000, "upgrade_capacity_bonus": 30000, "funny": "Место для твоих гор золота."},
+    {"key": "hotel", "name": "🏨 Отель", "base_income": 1000, "upgrade_income_bonus": 1000, "base_capacity": 200000, "cost": 2000000, "upgrade_cost_base": 500000, "upgrade_capacity_bonus": 60000, "funny": "Все включено, особенно прибыль."},
     
     # 11-20: Бизнес
-    {"key": "office", "name": "🏢 Офис", "base_income": 2000, "base_capacity": 400000, "cost": 5000000, "upgrade_cost_base": 1000000, "upgrade_capacity_bonus": 125000, "funny": "Планктон работает на тебя."},
-    {"key": "bank", "name": "🏦 Банк", "base_income": 5000, "base_capacity": 1000000, "cost": 10000000, "upgrade_cost_base": 2500000, "upgrade_capacity_bonus": 300000, "funny": "Хранилище переполнено."},
-    {"key": "casino", "name": "🎰 Казино", "base_income": 10000, "base_capacity": 2000000, "cost": 20000000, "upgrade_cost_base": 5000000, "upgrade_capacity_bonus": 600000, "funny": "Казино всегда в выигрыше (ты тоже)."},
-    {"key": "factory", "name": "🏭 Фабрика", "base_income": 25000, "base_capacity": 5000000, "cost": 50000000, "upgrade_cost_base": 10000000, "upgrade_capacity_bonus": 1500000, "funny": "Масштабное производство."},
-    {"key": "supermarket", "name": "🛍️ Супермаркет", "base_income": 50000, "base_capacity": 10000000, "cost": 100000000, "upgrade_cost_base": 25000000, "upgrade_capacity_bonus": 3000000, "funny": "Очереди на кассах."},
-    {"key": "corporation", "name": "🌆 Корпорация", "base_income": 75000, "base_capacity": 15000000, "cost": 200000000, "upgrade_cost_base": 50000000, "upgrade_capacity_bonus": 6000000, "funny": "Мировое господство."},
-    {"key": "spaceport", "name": "🚀 Космодром", "base_income": 100000, "base_capacity": 20000000, "cost": 400000000, "upgrade_cost_base": 100000000, "upgrade_capacity_bonus": 15000000, "funny": "Туристы на Марс, деньги тебе."},
-    {"key": "tech_hub", "name": "💻 Тех-Хаб", "base_income": 250000, "base_capacity": 50000000, "cost": 700000000, "upgrade_cost_base": 200000000, "upgrade_capacity_bonus": 30000000, "funny": "Кремниевая долина нервно курит."},
-    {"key": "empire", "name": "🏰 Империя", "base_income": 500000, "base_capacity": 100000000, "cost": 1500000000, "upgrade_cost_base": 500000000, "upgrade_capacity_bonus": 60000000, "funny": "Ты — король мира."},
-    {"key": "dyson_sphere", "name": "☀️ Сфера Дайсона", "base_income": 1000000, "base_capacity": 200000000, "cost": 3000000000, "upgrade_cost_base": 1000000000, "upgrade_capacity_bonus": 300000000, "funny": "Энергия целой звезды в кармане."},
+    {"key": "office", "name": "🏢 Офис", "base_income": 2000, "upgrade_income_bonus": 2000, "base_capacity": 400000, "cost": 5000000, "upgrade_cost_base": 1000000, "upgrade_capacity_bonus": 125000, "funny": "Планктон работает на тебя."},
+    {"key": "bank", "name": "🏦 Банк", "base_income": 5000, "upgrade_income_bonus": 5000, "base_capacity": 1000000, "cost": 10000000, "upgrade_cost_base": 2500000, "upgrade_capacity_bonus": 300000, "funny": "Хранилище переполнено."},
+    {"key": "casino", "name": "🎰 Казино", "base_income": 10000, "upgrade_income_bonus": 10000, "base_capacity": 2000000, "cost": 20000000, "upgrade_cost_base": 5000000, "upgrade_capacity_bonus": 600000, "funny": "Казино всегда в выигрыше (ты тоже)."},
+    {"key": "factory", "name": "🏭 Фабрика", "base_income": 25000, "upgrade_income_bonus": 25000, "base_capacity": 5000000, "cost": 50000000, "upgrade_cost_base": 10000000, "upgrade_capacity_bonus": 1500000, "funny": "Масштабное производство."},
+    {"key": "supermarket", "name": "🛍️ Супермаркет", "base_income": 50000, "upgrade_income_bonus": 50000, "base_capacity": 10000000, "cost": 100000000, "upgrade_cost_base": 25000000, "upgrade_capacity_bonus": 3000000, "funny": "Очереди на кассах."},
+    {"key": "corporation", "name": "🌆 Корпорация", "base_income": 75000, "upgrade_income_bonus": 75000, "base_capacity": 15000000, "cost": 200000000, "upgrade_cost_base": 50000000, "upgrade_capacity_bonus": 6000000, "funny": "Мировое господство."},
+    {"key": "spaceport", "name": "🚀 Космодром", "base_income": 100000, "upgrade_income_bonus": 100000, "base_capacity": 20000000, "cost": 400000000, "upgrade_cost_base": 100000000, "upgrade_capacity_bonus": 15000000, "funny": "Туристы на Марс, деньги тебе."},
+    {"key": "tech_hub", "name": "💻 Тех-Хаб", "base_income": 250000, "upgrade_income_bonus": 250000, "base_capacity": 50000000, "cost": 700000000, "upgrade_cost_base": 200000000, "upgrade_capacity_bonus": 30000000, "funny": "Кремниевая долина нервно курит."},
+    {"key": "empire", "name": "🏰 Империя", "base_income": 500000, "upgrade_income_bonus": 500000, "base_capacity": 100000000, "cost": 1500000000, "upgrade_cost_base": 500000000, "upgrade_capacity_bonus": 60000000, "funny": "Ты — король мира."},
+    {"key": "dyson_sphere", "name": "☀️ Сфера Дайсона", "base_income": 1000000, "upgrade_income_bonus": 1000000, "base_capacity": 200000000, "cost": 3000000000, "upgrade_cost_base": 1000000000, "upgrade_capacity_bonus": 300000000, "funny": "Энергия целой звезды в кармане."},
     
-    # 21-30: Мега-структуры
-    {"key": "quantum_center", "name": "⚛️ Квантовый центр", "base_income": 5000000, "base_capacity": 1000000000, "cost": 5000000000, "upgrade_cost_base": 2000000000, "upgrade_capacity_bonus": 750000000, "funny": "Вычисляет прибыль быстрее света."},
-    {"key": "underwater_city", "name": "🌊 Подводный город", "base_income": 25000000, "base_capacity": 5000000000, "cost": 20000000000, "upgrade_cost_base": 5000000000, "upgrade_capacity_bonus": 1500000000, "funny": "Нет налогов на дне океана."},
-    {"key": "weather_control", "name": "⚡ Контроль погоды", "base_income": 50000000, "base_capacity": 10000000000, "cost": 100000000000, "upgrade_cost_base": 25000000000, "upgrade_capacity_bonus": 3500000000, "funny": "Продаем солнечные дни."},
-    {"key": "orbital_station", "name": "🛰️ Орбитальная станция", "base_income": 100000000, "base_capacity": 20000000000, "cost": 200000000000, "upgrade_cost_base": 50000000000, "upgrade_capacity_bonus": 9000000000, "funny": "Отель с видом на Землю."},
-    {"key": "space_elevator", "name": "🏗️ Космический лифт", "base_income": 300000000, "base_capacity": 60000000000, "cost": 500000000000, "upgrade_cost_base": 100000000000, "upgrade_capacity_bonus": 25000000000, "funny": "Доставка на орбиту за копейки."},
-    {"key": "moon_base", "name": "🌑 Лунная база", "base_income": 500000000, "base_capacity": 100000000000, "cost": 1500000000000, "upgrade_cost_base": 500000000000, "upgrade_capacity_bonus": 60000000000, "funny": "Добыча редких ресурсов."},
-    {"key": "mars_colony", "name": "🔴 Колония на Марсе", "base_income": 750000000, "base_capacity": 150000000000, "cost": 3000000000000, "upgrade_cost_base": 1000000000000, "upgrade_capacity_bonus": 150000000000, "funny": "Новый дом для человечества."},
-    {"key": "artificial_sun", "name": "☀️ Искусственное Солнце", "base_income": 1000000000, "base_capacity": 200000000000, "cost": 5000000000000, "upgrade_cost_base": 2000000000000, "upgrade_capacity_bonus": 420000000000, "funny": "Вечная энергия, вечная прибыль."},
-    {"key": "galactic_bank", "name": "🌌 Галактический банк", "base_income": 5000000000, "base_capacity": 1000000000000, "cost": 8000000000000, "upgrade_cost_base": 4000000000000, "upgrade_capacity_bonus": 1200000000000, "funny": "Валюта всех цивилизаций здесь."},
-    {"key": "universal_core", "name": "💠 Ядро Вселенной", "base_income": 10000000000, "base_capacity": 2000000000000, "cost": 25000000000000, "upgrade_cost_base": 7000000000000, "upgrade_capacity_bonus": 3000000000000, "funny": "Ты управляешь самим мирозданием."}
+    # 21-30: НОВЫЕ СООРУЖЕНИЯ
+    {"key": "electronic_judge", "name": "⚖️ Электронный Судья", "base_income": 5000000, "upgrade_income_bonus": 5000000, "base_capacity": 1000000000, "cost": 5000000000, "upgrade_cost_base": 2000000000, "upgrade_capacity_bonus": 750000000, "funny": "Искусственный интеллект, который решает, кто прав, а кто богат."},
+    {"key": "data_farm", "name": "💾 Ферма данных", "base_income": 25000000, "upgrade_income_bonus": 25000000, "base_capacity": 5000000000, "cost": 20000000000, "upgrade_cost_base": 5000000000, "upgrade_capacity_bonus": 1500000000, "funny": "Самый дорогой товар в мире — информация, и она вся твоя."},
+    {"key": "stock_exchange", "name": "📈 Фондовая Биржа", "base_income": 50000000, "upgrade_income_bonus": 50000000, "base_capacity": 10000000000, "cost": 100000000000, "upgrade_cost_base": 25000000000, "upgrade_capacity_bonus": 3500000000, "funny": "Когда ты чихаешь, мировой рынок падает."},
+    {"key": "ocean_tunnel", "name": "🚇 Тоннель под Океаном", "base_income": 100000000, "upgrade_income_bonus": 100000000, "base_capacity": 20000000000, "cost": 200000000000, "upgrade_cost_base": 50000000000, "upgrade_capacity_bonus": 9000000000, "funny": "Зачем летать, если можно проехать? Самый длинный платный проезд."},
+    {"key": "cloud_storage", "name": "☁️ Облачное Хранилище", "base_income": 300000000, "upgrade_income_bonus": 300000000, "base_capacity": 60000000000, "cost": 500000000000, "upgrade_cost_base": 100000000000, "upgrade_capacity_bonus": 25000000000, "funny": "Хранишь все мемы планеты и зарабатываешь на этом."},
+    {"key": "immortal_storage", "name": "🔒 Хранилище Вечности", "base_income": 500000000, "upgrade_income_bonus": 500000000, "base_capacity": 100000000000, "cost": 1500000000000, "upgrade_cost_base": 500000000000, "upgrade_capacity_bonus": 60000000000, "funny": "Ты продаешь места для хранения сознания. Очень дорого."},
+    {"key": "tax_committee", "name": "💸 Комитет по Налогам", "base_income": 750000000, "upgrade_income_bonus": 750000000, "base_capacity": 150000000000, "cost": 3000000000000, "upgrade_cost_base": 1000000000000, "upgrade_capacity_bonus": 150000000000, "funny": "Ты платишь налоги сам себе, а потом сам себе их возвращаешь."},
+    {"key": "global_water_fund", "name": "💧 Мировой Фонд Воды", "base_income": 1000000000, "upgrade_income_bonus": 1000000000, "base_capacity": 200000000000, "cost": 5000000000000, "upgrade_cost_base": 2000000000000, "upgrade_capacity_bonus": 420000000000, "funny": "Самый ценный ресурс планеты принадлежит тебе."},
+    {"key": "time_factory", "name": "⏳ Фабрика Времени", "base_income": 5000000000, "upgrade_income_bonus": 5000000000, "base_capacity": 1000000000000, "cost": 8000000000000, "upgrade_cost_base": 4000000000000, "upgrade_capacity_bonus": 1200000000000, "funny": "Производит дополнительные секунды для самых выгодных сделок."},
+    {"key": "planet_editor", "name": "🌍 Главный Редактор Планеты", "base_income": 10000000000, "upgrade_income_bonus": 10000000000, "base_capacity": 2000000000000, "cost": 25000000000000, "upgrade_cost_base": 7000000000000, "upgrade_capacity_bonus": 3000000000000, "funny": "Ты можешь стереть с карты города, которые не нравятся, но решил просто зарабатывать."}
 ]
 
 # --- СПИСОК ОСНОВНЫХ ЗАДАНИЙ ---
@@ -173,7 +174,7 @@ main_quests_info = [
     {"key": "upg_20", "type": "upgrades_count", "target": 20, "name": "🖐️ Легендарный тап", "desc": "Купи 20 разных пальцев", "rew_coins": 45000000, "rew_tap": 2500, "rew_chance": 0},
     {"key": "upg_30", "type": "upgrades_count", "target": 30, "name": "🖐️ Абсолютная власть", "desc": "Купи 30 разных пальцев", "rew_coins": 750000000000, "rew_tap": 100000, "rew_chance": 0},
     
-    # ТИП 4: КЛИКИ (ОБНОВЛЕНО ПО ТВОЕМУ ЗАПРОСУ)
+    # ТИП 4: КЛИКИ
     {"key": "click_1k", "type": "clicks", "target": 1000, "name": "👆 Быстрый палец", "desc": "Сделай 1 000 тапов", "rew_coins": 100000, "rew_tap": 50, "rew_chance": 0},
     {"key": "click_5k", "type": "clicks", "target": 5000, "name": "👆 Клик-машина", "desc": "Сделай 5 000 тапов", "rew_coins": 500000, "rew_tap": 200, "rew_chance": 0},
     {"key": "click_20k", "type": "clicks", "target": 20000, "name": "👆 Скорость света", "desc": "Сделай 20 000 тапов", "rew_coins": 3000000, "rew_tap": 500, "rew_chance": 0},
@@ -205,6 +206,43 @@ main_quests_info = [
 # ═══════════════════════════════════════════════════════════
 # РЕГИСТРАЦИЯ И ХЕЛПЕРЫ
 # ═══════════════════════════════════════════════════════════
+
+# Новая функция для полного пересчета стат игрока на основе актуального конфига
+def recalculate_user_stats(user_id):
+    if user_id not in users: return
+    user = users[user_id]
+    
+    # 1. Пересчет силы клика
+    current_tap = 1
+    # Добавляем бонусы за купленные пальцы
+    for info in upgrades_info:
+        if user["upgrades"].get(info["key"]) == 1:
+            current_tap += info["bonus"]
+    
+    # Добавляем бонусы за квесты (нужно сохранить этот прогресс, так как он не в upgrades_info)
+    # Здесь сложнее: бонусы квестов уже влиты в tap_mult. 
+    # Чтобы сделать это "чисто", лучше хранить бонусы квестов отдельно.
+    # Но для простоты: мы пересчитываем только БАЗОВЫЕ улучшения пальцев.
+    # А квестовые бонусы добавляются сверху. 
+    # В текущей реализации квестовые бонусы просто добавлялись к tap_mult.
+    # Если мы хотим динамику, нам надо знать сколько дали квесты.
+    # Допустим, мы пересчитываем базу от пальцев, но оставляем старую "разницу" от квестов?
+    # Или проще: считаем пальцы + проходим по выполненным квестам и добавляем их бонусы.
+    
+    quest_tap_bonus = 0
+    quest_chance_bonus = 0.0
+    for q_key in user["completed_quests"]:
+        quest = next((q for q in main_quests_info if q["key"] == q_key), None)
+        if quest:
+            quest_tap_bonus += quest.get("rew_tap", 0)
+            quest_chance_bonus += quest.get("rew_chance", 0)
+            
+    user["tap_mult"] = current_tap + quest_tap_bonus
+    user["diamond_chance_bonus"] = quest_chance_bonus
+
+    # 2. Пересчет пассивного дохода
+    calculate_passive(user)
+
 def check_daily_reset(user):
     today = date.today().isoformat()
     if user["daily_progress"]["date"] != today:
@@ -227,10 +265,16 @@ def generate_unique_id():
             return new_id
 
 def get_current_finger_info(user):
+    # При вызове обновляем данные, чтобы они были актуальны
+    recalculate_user_stats(list(users.keys())[list(users.values()).index(user)]) 
+    
     current_finger_name = upgrades_info[0]["name"]
+    # Берем tap_mult напрямую, так как он теперь всегда актуален
     current_finger_bonus = user['tap_mult']
+    
+    # Ищем имя самого крутого купленного пальца для отображения
     for info in reversed(upgrades_info):
-        if user["upgrades"][info["key"]] == 1:
+        if user["upgrades"].get(info["key"]) == 1:
             current_finger_name = info["name"]
             break
     return current_finger_name, current_finger_bonus
@@ -268,27 +312,50 @@ def tap_button():
 async def update_passive_income(user_id: int):
     if user_id not in users: return
     user = users[user_id]
+    
+    # Перед начислением обновляем статы, чтобы доход был актуальным по конфигу
+    recalculate_user_stats(user_id)
+    
     now = datetime.now().timestamp()
     for info in buildings_info:
         key = info["key"]
-        level = user["buildings_levels"][key]
-        if level > 0 and user["buildings_last_update"][key] > 0:
-            minutes_passed = (now - user["buildings_last_update"][key]) / 60
-            full_minutes = int(minutes_passed)
-            income_per_min = info["base_income"] * level
-            earned = income_per_min * full_minutes
-            current_accum = user["buildings_accumulated"][key]
-            capacity = info["base_capacity"] + info["upgrade_capacity_bonus"] * (level - 1)
-            new_accum = min(current_accum + earned, capacity)
-            user["buildings_accumulated"][key] = new_accum
-            user["buildings_last_update"][key] += full_minutes * 60
+        level = user["buildings_levels"].get(key, 0)
+        
+        # Безопасная инициализация времени
+        if key not in user["buildings_last_update"]:
+            user["buildings_last_update"][key] = now
+            
+        if level > 0:
+            last_upd = user["buildings_last_update"][key]
+            if last_upd > 0:
+                minutes_passed = (now - last_upd) / 60
+                full_minutes = int(minutes_passed)
+                
+                # Расчет дохода по новой формуле
+                # Доход = База + (Бонус * (Уровень - 1))
+                bonus = info.get("upgrade_income_bonus", info["base_income"])
+                income_per_min = info["base_income"] + (bonus * (level - 1))
+                
+                earned = income_per_min * full_minutes
+                
+                current_accum = user["buildings_accumulated"].get(key, 0)
+                capacity = info["base_capacity"] + info["upgrade_capacity_bonus"] * (level - 1)
+                new_accum = min(current_accum + earned, capacity)
+                
+                user["buildings_accumulated"][key] = new_accum
+                if full_minutes > 0:
+                    user["buildings_last_update"][key] += full_minutes * 60
 
+# Функция пересчета общего пассивного дохода
 def calculate_passive(user):
     passive = 0
     for info in buildings_info:
-        level = user["buildings_levels"][info["key"]]
+        level = user["buildings_levels"].get(info["key"], 0)
         if level > 0:
-            passive += info["base_income"] * level
+            # Формула: База + (Бонус_улучшения * (Уровень - 1))
+            bonus = info.get("upgrade_income_bonus", info["base_income"])
+            income_val = info["base_income"] + (bonus * (level - 1))
+            passive += income_val
     user["passive_per_minute"] = passive
 
 def get_progress_bar(current, target, length=10):
@@ -360,6 +427,10 @@ async def check_daily_notifications(user_id: int):
 
 async def show_main_interface(message: Message, user_id: int):
     user = users[user_id]
+    
+    # Обновляем статы при показе интерфейса
+    recalculate_user_stats(user_id)
+    
     finger_name, finger_bonus = get_current_finger_info(user)
     safe_nick = str(user['nickname']).replace("<", "&lt;").replace(">", "&gt;")
     
@@ -470,7 +541,7 @@ async def start(message: Message):
 
     # Обновляем активность при старте
     users[user_id]["last_active"] = date.today().isoformat()
-    calculate_passive(users[user_id])
+    recalculate_user_stats(user_id)
     await show_main_interface(message, user_id)
 
 # ═══════════════════════════════════════════════════════════
@@ -513,6 +584,8 @@ async def handle_text(message: Message):
             users[user_id]["username"] = current_username
         # Обновляем last_active при любой активности
         users[user_id]["last_active"] = date.today().isoformat()
+        # И обновляем статы динамически
+        recalculate_user_stats(user_id)
 
     if user_id in users and users[user_id].get("state") == "registering_nickname":
         user = users[user_id]
@@ -526,7 +599,7 @@ async def handle_text(message: Message):
         await admin_panel.notify_new_player(bot, user)
         await message.answer(f"✅ Отличный ник: <b>{safe_name}</b>", reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
         user["state"] = "active"
-        calculate_passive(user)
+        recalculate_user_stats(user_id)
         await show_main_interface(message, user_id)
         return
     
@@ -593,15 +666,10 @@ async def export_data_handler(callback: CallbackQuery):
     await callback.message.edit_text("⏳ **Начинаю выгрузку...**")
     
     try:
-        # Добавлено await
         await database.save_all_users(users)
-        
-        # Добавлено await
         filename = await database.export_users_to_json_file()
-        
         file = FSInputFile(filename)
         await bot.send_document(callback.from_user.id, file, caption="✅ **Полная база данных игроков**")
-        
         os.remove(filename)
         
     except Exception as e:
@@ -612,7 +680,6 @@ async def export_data_handler(callback: CallbackQuery):
 async def broadcast_setup_handler(callback: CallbackQuery):
     if not admin_panel.is_admin(callback.from_user.id): return
     msg_type = callback.data.replace("broadcast_setup_", "")
-    # Тексты setup находятся в admin_panel, здесь мы просто показываем выбор времени
     text = "⏳ **Выберите время до начала события:**"
     await callback.message.edit_text(text, reply_markup=admin_panel.broadcast_time_kb(msg_type), parse_mode="Markdown")
 
@@ -623,14 +690,9 @@ async def broadcast_send_handler(callback: CallbackQuery):
     msg_type = parts[2]
     minutes = parts[3]
     
-    # Получаем текст из admin_panel
     send_text = admin_panel.get_broadcast_text(msg_type, minutes)
-    
     await callback.message.edit_text("⏳ **Рассылка запущена...**\nБот не будет отвечать некоторое время.", parse_mode="Markdown")
-    
-    # Запускаем рассылку через admin_panel
     count = await admin_panel.perform_broadcast(bot, users, send_text)
-            
     await callback.message.answer(f"✅ **Рассылка завершена!**\nПолучили: {count} чел.", parse_mode="Markdown")
 
 # ═══════════════════════════════════════════════════════════
@@ -703,24 +765,62 @@ async def admin_view_user(callback: CallbackQuery):
     if not target_user:
         await callback.answer("Игрок не найден", show_alert=True)
         return
-        
-    # Считаем данные для расширенного профиля
-    passive_income = 0
-    for info in buildings_info:
-        level = target_user["buildings_levels"].get(info["key"], 0)
-        if level > 0:
-            passive_income += info["base_income"] * level
-            
-    finger_name = upgrades_info[0]["name"]
-    for info in reversed(upgrades_info):
-        if target_user["upgrades"].get(info["key"], 0) == 1:
-            finger_name = info["name"]
-            break
+    
+    # Обновляем статы перед просмотром
+    recalculate_user_stats(target_tg_id)
+    
+    passive_income = target_user["passive_per_minute"]
+    finger_name, _ = get_current_finger_info(target_user)
             
     text = admin_panel.get_user_profile_text(target_user, target_tg_id, passive_income, finger_name)
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]])
+    
+    # Берем клавиатуру из admin_panel
+    kb = admin_panel.get_user_profile_kb(target_tg_id, page)
+    
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
+# --- ОБРАБОТЧИКИ ВАЙПА (ВЫЗЫВАЮТ ФУНКЦИИ ИЗ ADMIN_PANEL) ---
+
+@dp.callback_query(F.data.startswith("admin_wipe_ask_"))
+async def admin_wipe_ask(callback: CallbackQuery):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    parts = callback.data.split("_")
+    target_id = int(parts[3])
+    page = int(parts[4])
+    
+    # Получаем текст и клавиатуру из admin_panel
+    text = admin_panel.get_wipe_confirm_text(target_id)
+    kb = admin_panel.get_wipe_confirm_kb(target_id, page)
+    
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("admin_wipe_confirm_"))
+async def admin_wipe_confirm(callback: CallbackQuery):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    parts = callback.data.split("_")
+    target_id = int(parts[3])
+    page = int(parts[4])
+    
+    # Собираем ключи для чистого восстановления
+    upgrade_keys = [info["key"] for info in upgrades_info]
+    building_keys = [info["key"] for info in buildings_info]
+    
+    # Вызываем логику сброса в admin_panel
+    success = await admin_panel.perform_user_wipe(users, target_id, upgrade_keys, building_keys)
+    
+    if not success:
+        await callback.answer("Ошибка: Игрок не найден!", show_alert=True)
+        return
+    
+    # Пересчитываем статы (они станут дефолтными)
+    recalculate_user_stats(target_id)
+    
+    await callback.answer("✅ Данные игрока полностью стерты!", show_alert=True)
+    
+    # Возвращаемся в просмотр игрока
+    new_data = f"admin_view_{target_id}_{page}"
+    new_callback = callback.model_copy(update={'data': new_data})
+    await admin_view_user(new_callback)
 # ═══════════════════════════════════════════════════════════
 # НАСТРОЙКИ
 # ═══════════════════════════════════════════════════════════
@@ -781,6 +881,10 @@ async def tap(callback: CallbackQuery):
     await update_passive_income(user_id)
     user = users[user_id]
     check_daily_reset(user)
+    
+    # Рекалькуляция статов здесь не нужна каждый тап (слишком нагрузит), 
+    # но можно делать проверку раз в N тапов, или просто полагаться на start/update_passive
+    
     now = datetime.now().timestamp()
     if now - user["last_tap_time"] < 0.5:
         await callback.answer(random.choice(funny_spam), show_alert=False)
@@ -819,6 +923,7 @@ async def show_tap(message: Message):
     user_id = message.from_user.id
     await update_passive_income(user_id)
     user = users[user_id]
+    recalculate_user_stats(user_id)
     finger_name, finger_bonus = get_current_finger_info(user)
     bonus_fmt = f"{finger_bonus:,}".replace(",", " ")
     text = (f"🌟<b>Добро пожаловать в Tycoon Empire!</b>🌟\n\n"
@@ -1007,8 +1112,12 @@ async def complete_quest(callback: CallbackQuery):
     user["completed_quests"].append(quest_key)
     user["balance"] += quest.get("rew_coins", 0)
     user["diamonds"] += quest.get("rew_diamonds", 0)
-    user["tap_mult"] += quest.get("rew_tap", 0)
-    user["diamond_chance_bonus"] += quest.get("rew_chance", 0)
+    
+    # Квестовые награды добавляются сверху, их нужно пересчитать или добавить к базе
+    # В текущей модели recalculate_user_stats пересчитывает тап заново, поэтому
+    # мы просто вызываем пересчет, который должен учесть выполненный квест
+    recalculate_user_stats(user_id)
+    
     await callback.answer("🎉 Задание выполнено!", show_alert=True)
     new_data = f"view_quest_{quest_key}"
     new_callback = callback.model_copy(update={'data': new_data})
@@ -1021,7 +1130,7 @@ async def profile(message: Message):
     user_id = message.from_user.id
     await update_passive_income(user_id)
     user = users[user_id]
-    calculate_passive(user)
+    recalculate_user_stats(user_id) # Гарантируем актуальность данных
     current_finger_name, current_finger_bonus = get_current_finger_info(user)
     total_chance = (BASE_DIAMOND_CHANCE + user["diamond_chance_bonus"]) * 100
     safe_nick = str(user['nickname']).replace("<", "&lt;").replace(">", "&gt;")
@@ -1065,8 +1174,11 @@ async def shop(message: Message, page=0):
     for i, info in enumerate(current_items):
         idx_in_global = start_idx + i
         key = info["key"]
-        bought = user["upgrades"][key]
-        unlocked = idx_in_global == 0 or user["upgrades"][upgrades_info[idx_in_global-1]["key"]] == 1
+        bought = user["upgrades"].get(key, 0)
+        # Безопасная проверка unlocked
+        prev_key = upgrades_info[idx_in_global-1]["key"] if idx_in_global > 0 else None
+        unlocked = idx_in_global == 0 or user["upgrades"].get(prev_key, 0) == 1
+        
         if bought: kb.inline_keyboard.append([InlineKeyboardButton(text=f"{info['name']} ✅", callback_data="bought_finger")])
         elif unlocked: kb.inline_keyboard.append([InlineKeyboardButton(text=info['name'], callback_data=f"view_finger_{key}_{page}")])
         else: kb.inline_keyboard.append([InlineKeyboardButton(text=f"{info['name']} 🔒", callback_data="locked_finger")])
@@ -1114,14 +1226,17 @@ async def buy_upgrade(callback: CallbackQuery):
     key = "_".join(data_parts[:-1])
     info = next((x for x in upgrades_info if x["key"] == key), None)
     if not info: return
-    if user["upgrades"][key] == 1: return
+    if user["upgrades"].get(key) == 1: return
     if user["balance"] < info["cost"]:
         await callback.answer("❌ Не хватает монет!", show_alert=True)
         return
     user["balance"] -= info["cost"]
     user["total_spent"] += info["cost"]
     user["upgrades"][key] = 1
-    user["tap_mult"] += info["bonus"]
+    
+    # Полный пересчет после покупки
+    recalculate_user_stats(user_id)
+    
     await callback.answer(f"🎉 Ты купил {info['name']}!", show_alert=True)
     await check_quest_notifications(callback.message, user_id)
     try: await callback.message.delete()
@@ -1146,8 +1261,9 @@ async def buildings_shop(message: Message, page=0):
     for i, info in enumerate(current_items):
         idx_in_global = start_idx + i
         key = info["key"]
-        level = user["buildings_levels"][key]
-        unlocked = idx_in_global == 0 or user["buildings_levels"][buildings_info[idx_in_global-1]["key"]] > 0
+        level = user["buildings_levels"].get(key, 0)
+        prev_key = buildings_info[idx_in_global-1]["key"] if idx_in_global > 0 else None
+        unlocked = idx_in_global == 0 or user["buildings_levels"].get(prev_key, 0) > 0
         if level > 0: kb.inline_keyboard.append([InlineKeyboardButton(text=f"{info['name']} (Ур. {level})", callback_data=f"view_building_{key}_{page}")])
         elif unlocked: kb.inline_keyboard.append([InlineKeyboardButton(text=info['name'], callback_data=f"view_building_{key}_{page}")])
         else: kb.inline_keyboard.append([InlineKeyboardButton(text=f"{info['name']} 🔒", callback_data="locked_building")])
@@ -1181,17 +1297,36 @@ async def view_building(callback: CallbackQuery):
     if not info: return
     level = user["buildings_levels"][key]
     kb = InlineKeyboardMarkup(inline_keyboard=[])
+    
+    # Форматирование с пробелами
+    income_base_fmt = f"{info['base_income']:,}".replace(",", " ")
+    
     if level == 0:
-        text = (f"✨ **{info['name']}** ✨\n🕒 Даёт: **+{info['base_income']}** м/мин\n📦 Вместимость: **{info['base_capacity']:,}**\n{info['funny']}\n💸 Цена: **{info['cost']:,}**").replace(",", " ")
+        text = (f"✨ **{info['name']}** ✨\n🕒 Даёт: **+{income_base_fmt}** м/мин\n📦 Вместимость: **{info['base_capacity']:,}**\n{info['funny']}\n💸 Цена: **{info['cost']:,}**").replace(",", " ")
         kb.inline_keyboard.append([InlineKeyboardButton(text="🛒 ПОСТРОИТЬ", callback_data=f"buy_building_{key}_{page}")])
     else:
-        current_income = info['base_income'] * level
+        # Расчет текущего дохода с учетом бонуса
+        bonus = info.get("upgrade_income_bonus", info["base_income"])
+        current_income = info['base_income'] + (bonus * (level - 1))
+        current_income_fmt = f"{current_income:,}".replace(",", " ")
+        
         current_capacity = info['base_capacity'] + info['upgrade_capacity_bonus'] * (level - 1)
         accumulated = user["buildings_accumulated"][key]
         upgrade_cost = info['upgrade_cost_base'] * level
-        text = (f"✨ **{info['name']} (Ур. {level})** ✨\n🕒 Доход: **+{current_income}** м/мин\n📦 Накоплено: **{accumulated:,} / {current_capacity:,}**\n{info['funny']}").replace(",", " ")
+        
+        # Расчет будущего дохода
+        next_income = current_income + bonus
+        next_income_fmt = f"{next_income:,}".replace(",", " ")
+        
+        text = (f"✨ **{info['name']} (Ур. {level})** ✨\n"
+                f"🕒 Доход: **+{current_income_fmt}** м/мин\n"
+                f"📦 Накоплено: **{accumulated:,} / {current_capacity:,}**\n"
+                f"{info['funny']}").replace(",", " ")
         if accumulated >= current_income: kb.inline_keyboard.append([InlineKeyboardButton(text=f"💰 Забрать {accumulated:,}", callback_data=f"claim_building_{key}_{page}")])
-        if level < 10: kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить ({upgrade_cost:,})", callback_data=f"upgrade_building_{key}_{page}")])
+        # Показываем новый стат в кнопке или описании. 
+        # Добавим инфо о приросте в текст кнопки улучшения
+        kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить (+{bonus:,}/мин) | {upgrade_cost:,}", callback_data=f"upgrade_building_{key}_{page}")])
+        
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"build_page_{page}")])
     try: await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     except: pass
@@ -1342,6 +1477,10 @@ async def main():
         # 2. Загружаем всех пользователей из БД в оперативную память
         loaded_data = await database.load_all_users()
         users.update(loaded_data)
+        
+        # Пересчитываем статы для всех загруженных игроков, чтобы они соответствовали новому конфигу
+        for uid in users:
+            recalculate_user_stats(uid)
         
         # 3. Запуск фонового сохранения
         asyncio.create_task(autosave_loop())
