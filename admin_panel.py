@@ -1,8 +1,9 @@
 import math
 import asyncio
+from datetime import date
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-# ID Администраторов (Замените или добавьте ID, если их несколько)
+# ID Администраторов
 ADMIN_IDS = [5342285170]
 
 ITEMS_PER_PAGE = 10
@@ -63,12 +64,10 @@ def broadcast_time_kb(msg_type):
     ])
 
 # ═══════════════════════════════════════════════════════════
-# ЛОГИКА ПРОСМОТРА ИГРОКОВ (ИСПРАВЛЕНО)
+# ЛОГИКА ПРОСМОТРА ИГРОКОВ
 # ═══════════════════════════════════════════════════════════
 
 def get_users_keyboard(users_dict, page=0):
-    # Сортировка по Game ID (custom_id) от большего к меньшему
-    # Используем str(), чтобы избежать ошибок сравнения
     users_list = sorted(users_dict.items(), key=lambda x: str(x[1].get('custom_id', '0')), reverse=True)
     
     total_items = len(users_list)
@@ -79,15 +78,9 @@ def get_users_keyboard(users_dict, page=0):
     
     kb = []
     for tg_id, data in current_users:
-        # --- ИСПРАВЛЕНИЕ ОШИБКИ NONE TYPE ---
-        # Получаем никнейм. Если он None (игрок только зашел), берем 'Без ника'.
         raw_nick = data.get('nickname')
-        # Если raw_nick это None или пустая строка, ставим дефолт
         nick_str = str(raw_nick) if raw_nick else "Без ника"
-        
-        # Теперь можно безопасно обрезать
         nick_display = nick_str[:10]
-        # -------------------------------------
         
         game_id = data.get('custom_id', '???')
         btn_text = f"{game_id} | {nick_display}"
@@ -116,14 +109,12 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     else:
         tg_link = f'<a href="tg://user?id={tg_id}">User</a>'
 
-    # Форматирование чисел с пробелами
     balance = f"{user_data.get('balance', 0):,}".replace(",", " ")
     diamonds = f"{user_data.get('diamonds', 0):,}".replace(",", " ")
     total_spent = f"{user_data.get('total_spent', 0):,}".replace(",", " ")
     passive = f"{passive_income:,}".replace(",", " ")
     tap_power = f"{user_data.get('tap_mult', 1):,}".replace(",", " ")
     
-    # Последняя активность
     last_active = user_data.get('last_active') or user_data.get('registration_date', 'Нет данных')
 
     text = (
@@ -146,12 +137,104 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     )
     return text
 
+def get_user_profile_kb(target_id, page):
+    """Клавиатура действий с игроком: Стереть данные и Назад"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Стереть данные", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
+        [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
+    ])
+
+# ═══════════════════════════════════════════════════════════
+# ЛОГИКА ВАЙПА (СБРОСА)
+# ═══════════════════════════════════════════════════════════
+
+def get_wipe_confirm_text(target_id):
+    return (
+        f"‼️ **ВЫ УВЕРЕНЫ?** ‼️\n\n"
+        f"Вы собираетесь полностью обнулить игрока `{target_id}`.\n"
+        f"Будут удалены:\n"
+        f"- Весь баланс и алмазы\n"
+        f"- Все здания и улучшения\n"
+        f"- Все достижения и квесты\n"
+        f"- Рефералы и статистика\n\n"
+        f"Останется только Ник, Game ID и Дата регистрации.\n"
+        f"Это действие **НЕОБРАТИМО**."
+    )
+
+def get_wipe_confirm_kb(target_id, page):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚠️ ДА, СТЕРЕТЬ ВСЁ", callback_data=f"admin_wipe_confirm_{target_id}_{page}")],
+        [InlineKeyboardButton(text="🔙 НЕТ, ОТМЕНА", callback_data=f"admin_view_{target_id}_{page}")]
+    ])
+
+async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
+    """
+    Выполняет полный сброс данных пользователя в словаре.
+    upgrade_keys: список ключей пальцев (нужен для создания пустой структуры)
+    building_keys: список ключей зданий (нужен для создания пустой структуры)
+    """
+    if target_id not in users_dict:
+        return False
+        
+    u = users_dict[target_id]
+    
+    # Сохраняем важные данные
+    saved_nick = u.get("nickname")
+    saved_custom_id = u.get("custom_id")
+    saved_reg_date = u.get("registration_date")
+    saved_username = u.get("username")
+    
+    # Создаем пустые структуры
+    upgrades = {key: 0 for key in upgrade_keys}
+    upgrades["wooden_finger"] = 1 # Дефолтный палец
+    
+    buildings_levels = {key: 0 for key in building_keys}
+    buildings_accumulated = {key: 0 for key in building_keys}
+    buildings_last_update = {key: 0.0 for key in building_keys}
+    
+    # Перезаписываем пользователя
+    users_dict[target_id] = {
+        "username": saved_username,
+        "nickname": saved_nick,
+        "custom_id": saved_custom_id,
+        "registration_date": saved_reg_date,
+        "last_active": date.today().isoformat(),
+        "last_nick_change": None, 
+        "state": "active",
+        "privacy_enabled": True, 
+        "balance": 0, 
+        "diamonds": 0,
+        "total_diamonds_earned": 0,
+        "diamond_chance_bonus": 0.0,
+        "tap_mult": 1,
+        "passive_per_minute": 0,
+        "referrals": 0,
+        "total_clicks": 0,
+        "total_spent": 0,
+        "upgrades": upgrades,
+        "buildings_levels": buildings_levels,
+        "buildings_accumulated": buildings_accumulated,
+        "buildings_last_update": buildings_last_update,
+        "completed_quests": [],
+        "notified_quests": [],
+        "daily_streak": 0,
+        "last_daily_done_date": None,
+        "daily_progress": {
+            "date": date.today().isoformat(),
+            "clicks": 0, "upgrades": 0, "claims": 0, "completed": [], "all_done": False, "notified": []
+        },
+        "tap_message_id": None,
+        "shop_message_id": None,
+        "buildings_message_id": None,
+        "last_tap_time": 0.0
+    }
+    return True
+
 # ═══════════════════════════════════════════════════════════
 # ЛОГИКА РАССЫЛКИ
 # ═══════════════════════════════════════════════════════════
 
 def get_broadcast_text(msg_type, minutes):
-    """Возвращает текст оповещения в зависимости от типа."""
     if msg_type == "update":
         return (
             f"⚠️ **ВНИМАНИЕ: ОБНОВЛЕНИЕ!**\n\n"
@@ -169,13 +252,12 @@ def get_broadcast_text(msg_type, minutes):
         )
 
 async def perform_broadcast(bot, users_dict, text):
-    """Рассылает сообщение всем пользователям из словаря."""
     count = 0
     for uid in users_dict:
         try:
             await bot.send_message(uid, text, parse_mode="Markdown")
             count += 1
-            await asyncio.sleep(0.05) # Небольшая задержка, чтобы не спамить API
+            await asyncio.sleep(0.05) 
         except:
             pass
     return count
