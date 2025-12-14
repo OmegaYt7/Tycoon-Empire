@@ -52,7 +52,9 @@ def export_confirm_kb():
 def broadcast_type_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛠️ Тех. работы / Обновление", callback_data="broadcast_setup_update")],
-        [InlineKeyboardButton(text="⚠️ Важное сообщение", callback_data="broadcast_setup_info")]
+        [InlineKeyboardButton(text="⚠️ Важное сообщение", callback_data="broadcast_setup_info")],
+        # НОВАЯ КНОПКА
+        [InlineKeyboardButton(text="✅ Работы завершены", callback_data="broadcast_send_finished_now")]
     ])
 
 def broadcast_time_kb(msg_type):
@@ -99,9 +101,6 @@ def get_users_keyboard(users_dict, page=0):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
-    """
-    Расширенный профиль игрока для админа.
-    """
     username = user_data.get('username')
     
     if username and username != "Guest" and username != "User":
@@ -138,15 +137,10 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
     return text
 
 def get_user_profile_kb(target_id, page):
-    """Клавиатура действий с игроком: Стереть данные и Назад"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 Стереть данные", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
         [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
     ])
-
-# ═══════════════════════════════════════════════════════════
-# ЛОГИКА ВАЙПА (СБРОСА)
-# ═══════════════════════════════════════════════════════════
 
 def get_wipe_confirm_text(target_id):
     return (
@@ -168,31 +162,22 @@ def get_wipe_confirm_kb(target_id, page):
     ])
 
 async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
-    """
-    Выполняет полный сброс данных пользователя в словаре.
-    upgrade_keys: список ключей пальцев (нужен для создания пустой структуры)
-    building_keys: список ключей зданий (нужен для создания пустой структуры)
-    """
     if target_id not in users_dict:
         return False
-        
     u = users_dict[target_id]
     
-    # Сохраняем важные данные
     saved_nick = u.get("nickname")
     saved_custom_id = u.get("custom_id")
     saved_reg_date = u.get("registration_date")
     saved_username = u.get("username")
     
-    # Создаем пустые структуры
     upgrades = {key: 0 for key in upgrade_keys}
-    upgrades["wooden_finger"] = 1 # Дефолтный палец
+    upgrades["wooden_finger"] = 1
     
     buildings_levels = {key: 0 for key in building_keys}
     buildings_accumulated = {key: 0 for key in building_keys}
     buildings_last_update = {key: 0.0 for key in building_keys}
     
-    # Перезаписываем пользователя
     users_dict[target_id] = {
         "username": saved_username,
         "nickname": saved_nick,
@@ -234,7 +219,7 @@ async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
 # ЛОГИКА РАССЫЛКИ
 # ═══════════════════════════════════════════════════════════
 
-def get_broadcast_text(msg_type, minutes):
+def get_broadcast_text(msg_type, minutes=""):
     if msg_type == "update":
         return (
             f"⚠️ **ВНИМАНИЕ: ОБНОВЛЕНИЕ!**\n\n"
@@ -242,6 +227,13 @@ def get_broadcast_text(msg_type, minutes):
             f"⛔ **Настоятельно не рекомендуем** играть, покупать или улучшать что-либо в это время.\n"
             f"💾 Ваши последние данные могут не сохраниться!\n\n"
             f"Ждите сообщения о завершении."
+        )
+    elif msg_type == "finished":
+        # НОВЫЙ ТЕКСТ
+        return (
+            f"✅ **ТЕХНИЧЕСКИЕ РАБОТЫ ЗАВЕРШЕНЫ**\n\n"
+            f"Бот снова работает в штатном режиме.\n"
+            f"Спасибо за ожидание! Приятной игры! 🚀"
         )
     else:
         return (
