@@ -9,14 +9,10 @@ from datetime import datetime, timedelta
 # ═══════════════════════════════════════════════════════════
 
 SUPABASE_URL = "https://tuvqserdclbgloysblrx.supabase.co"
-# 👇👇👇 ВСТАВЬТЕ СЮДА ВАШ КЛЮЧ, КОТОРЫЙ БЫЛ РАНЬШЕ 👇👇👇
 SUPABASE_KEY = "sb_secret_bDIUtmYZ2Zx5Rz3EauEhlw_sbrmR6y9" 
 
-# Глобальная переменная для HTTP сессии AIOHTTP
 http_session = None
 
-# Заголовки для каждого запроса
-# Добавлен Connection: keep-alive для стабильности
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -30,47 +26,54 @@ HEADERS = {
 # ═══════════════════════════════════════════════════════════
 
 async def create_pool():
-    """Создает глобальную HTTP сессию для Supabase."""
     global http_session
     if http_session is None:
-        # Увеличиваем таймауты для стабильности
         timeout = aiohttp.ClientTimeout(total=30, connect=10)
         http_session = aiohttp.ClientSession(headers=HEADERS, timeout=timeout)
-        logging.warning("✅ Инициализация глобальной HTTP сессии для Supabase...")
-        
-        # Проверка соединения
-        url = f"{SUPABASE_URL}/rest/v1/"
-        try:
-            async with http_session.get(url) as resp:
-                if resp.status == 200:
-                    logging.warning("✅ Соединение с Supabase установлено!")
-                else:
-                    logging.error(f"❌ Ошибка соединения с Supabase: {resp.status}")
-        except Exception as e:
-            logging.error(f"❌ Критическая ошибка соединения с Supabase: {e}")
+        logging.warning("✅ Инициализация сессии Supabase...")
 
 async def close_session():
-    """Закрывает глобальную сессию при завершении работы бота."""
     global http_session
     if http_session:
         await http_session.close()
-        logging.warning("🔌 HTTP сессия Supabase закрыта.")
+        logging.warning("🔌 Сессия Supabase закрыта.")
 
 async def create_table():
-    """Функция-заглушка для совместимости."""
     pass
 
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ СОХРАНЕНИЯ ОДНОГО ИГРОКА ---
+async def save_user(user_id, user_data):
+    """Сохраняет одного конкретного пользователя (для мгновенного сейва при покупках)."""
+    global http_session
+    if http_session is None: await create_pool()
+    
+    url = f"{SUPABASE_URL}/rest/v1/users"
+    headers = {"Prefer": "resolution=merge-duplicates"}
+    
+    row = {
+        "user_id": user_id,
+        "username": user_data.get('username', 'Guest'),
+        "nickname": user_data.get('nickname', 'Unknown'),
+        "balance": user_data.get('balance', 0),
+        "diamonds": user_data.get('diamonds', 0),
+        "referrals": user_data.get('referrals', 0),
+        "last_active": datetime.now().strftime("%Y-%m-%d"),
+        "json_data": user_data
+    }
+    
+    try:
+        async with http_session.post(url, headers=headers, json=[row]) as resp:
+            if resp.status not in [200, 201, 204]:
+                logging.error(f"Ошибка сохранения игрока {user_id}: {resp.status}")
+    except Exception as e:
+        logging.error(f"Ошибка сохранения игрока {user_id}: {e}")
+
 async def save_all_users(users_dict):
-    """Сохраняет всех пользователей через HTTP запрос (UPSERT)."""
-    if not users_dict:
-        return
+    """Сохраняет всех пользователей."""
+    if not users_dict: return
 
     global http_session
-    if http_session is None:
-        logging.error("❌ Сессия не инициализирована при сохранении!")
-        # Пытаемся пересоздать сессию на лету, если она потерялась
-        await create_pool()
-        if http_session is None: return
+    if http_session is None: await create_pool()
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_list = []
@@ -88,39 +91,26 @@ async def save_all_users(users_dict):
         }
         data_list.append(row)
 
-    chunk_size = 100
+    chunk_size = 50 # Уменьшил чанк для надежности
     url = f"{SUPABASE_URL}/rest/v1/users"
+    headers = {"Prefer": "resolution=merge-duplicates"} 
     
-    # Заголовок для UPSERT
-    upsert_headers = {"Prefer": "resolution=merge-duplicates"} 
-    
-    # Отправка данных чанками
     for i in range(0, len(data_list), chunk_size):
         chunk = data_list[i:i + chunk_size]
         try:
-            async with http_session.post(url, headers=upsert_headers, json=chunk) as resp:
+            async with http_session.post(url, headers=headers, json=chunk) as resp:
                 if resp.status not in [200, 201, 204]:
-                    text = await resp.text()
-                    logging.error(f"❌ Ошибка сохранения Supabase: {resp.status} - {text}")
-        
-        # --- ОБРАБОТКА ОШИБОК СЕТИ ---
-        except ConnectionResetError:
-            logging.warning("⚠️ Supabase сбросил соединение (Connection reset). Пропускаем этот цикл.")
-        except aiohttp.ClientConnectorError:
-            logging.warning("⚠️ Не удалось подключиться к Supabase. Проверьте интернет.")
-        except aiohttp.ServerDisconnectedError:
-            logging.warning("⚠️ Сервер разорвал соединение. Попробуем позже.")
+                    logging.error(f"Ошибка массового сохранения: {resp.status}")
         except Exception as e:
-            logging.error(f"❌ Ошибка запроса POST к Supabase: {e}")
+            logging.error(f"Ошибка запроса к Supabase: {e}")
 
 async def load_all_users():
-    """Загружает всех пользователей из Supabase через GET запрос."""
     global http_session
-    if http_session is None:
-        logging.error("❌ Сессия не инициализирована при загрузке!")
-        return {}
+    if http_session is None: return {}
 
     loaded_users = {}
+    # Загружаем ВСЕ данные, лимита нет, но Supabase может отдать максимум 1000 строк за раз
+    # Для начала хватит, при росте нужно будет делать пагинацию
     url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
     
     try:
@@ -130,62 +120,31 @@ async def load_all_users():
                 for row in rows:
                     user_id = row['user_id']
                     user_data = row['json_data']
-                    
                     if isinstance(user_data, str):
-                        try:
-                            user_data = json.loads(user_data)
-                        except:
-                            continue # Пропускаем битые данные
-                        
+                        try: user_data = json.loads(user_data)
+                        except: continue
                     loaded_users[int(user_id)] = user_data
-                
-                logging.warning(f"📥 Загружено {len(loaded_users)} пользователей из Supabase.")
+                logging.warning(f"📥 Загружено {len(loaded_users)} пользователей.")
             else:
-                text = await resp.text()
-                logging.error(f"❌ Ошибка загрузки из Supabase: {resp.status} - {text}")
-                
+                logging.error(f"Ошибка загрузки: {resp.status}")
     except Exception as e:
-        logging.error(f"❌ Критическая ошибка загрузки: {e}")
+        logging.error(f"Критическая ошибка загрузки: {e}")
         
     return loaded_users
 
-async def delete_inactive_users(days=90):
-    """Удаляет неактивных пользователей."""
-    global http_session
-    if http_session is None: return
-
-    cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    url = f"{SUPABASE_URL}/rest/v1/users?last_active=lt.{cutoff_date}"
-    
-    try:
-        async with http_session.delete(url) as resp:
-            if resp.status == 204:
-                logging.warning(f"🧹 Очистка старых пользователей выполнена.")
-            else:
-                logging.error(f"Ошибка очистки: {resp.status}")
-    except Exception as e:
-        logging.error(f"Ошибка запроса очистки: {e}")
-
 async def export_users_to_json_file():
-    """Выгружает базу в файл (скачивает всё из Supabase)."""
     global http_session
     if http_session is None: return None
-
     url = f"{SUPABASE_URL}/rest/v1/users?select=json_data"
     filename = "users_export.json"
-    
     try:
         async with http_session.get(url) as resp:
             if resp.status == 200:
                 rows = await resp.json()
                 all_data = [row['json_data'] for row in rows]
-                
                 with open(filename, "w", encoding="utf-8") as f:
                     json.dump(all_data, f, ensure_ascii=False, indent=4)
                 return filename
-            else:
-                logging.error(f"Ошибка экспорта: {resp.status}")
-    except Exception as e:
-        logging.error(f"Ошибка экспорта: {e}")
-    
+    except Exception:
+        pass
     return None
