@@ -41,9 +41,8 @@ async def close_session():
 async def create_table():
     pass
 
-# --- НОВАЯ ФУНКЦИЯ ДЛЯ СОХРАНЕНИЯ ОДНОГО ИГРОКА ---
 async def save_user(user_id, user_data):
-    """Сохраняет одного конкретного пользователя (для мгновенного сейва при покупках)."""
+    """Сохраняет одного пользователя. Мгновенная запись."""
     global http_session
     if http_session is None: await create_pool()
     
@@ -64,12 +63,12 @@ async def save_user(user_id, user_data):
     try:
         async with http_session.post(url, headers=headers, json=[row]) as resp:
             if resp.status not in [200, 201, 204]:
-                logging.error(f"Ошибка сохранения игрока {user_id}: {resp.status}")
+                logging.error(f"Save User Error {user_id}: {resp.status}")
     except Exception as e:
-        logging.error(f"Ошибка сохранения игрока {user_id}: {e}")
+        logging.error(f"Save User Exception {user_id}: {e}")
 
 async def save_all_users(users_dict):
-    """Сохраняет всех пользователей."""
+    """Массовое сохранение с задержкой, чтобы не получить бан API."""
     if not users_dict: return
 
     global http_session
@@ -91,7 +90,7 @@ async def save_all_users(users_dict):
         }
         data_list.append(row)
 
-    chunk_size = 50 # Уменьшил чанк для надежности
+    chunk_size = 50 
     url = f"{SUPABASE_URL}/rest/v1/users"
     headers = {"Prefer": "resolution=merge-duplicates"} 
     
@@ -100,17 +99,17 @@ async def save_all_users(users_dict):
         try:
             async with http_session.post(url, headers=headers, json=chunk) as resp:
                 if resp.status not in [200, 201, 204]:
-                    logging.error(f"Ошибка массового сохранения: {resp.status}")
+                    logging.error(f"Bulk Save Error: {resp.status}")
+            # Небольшая пауза между чанками, чтобы Supabase не ругался
+            await asyncio.sleep(0.1) 
         except Exception as e:
-            logging.error(f"Ошибка запроса к Supabase: {e}")
+            logging.error(f"Bulk Save Exception: {e}")
 
 async def load_all_users():
     global http_session
     if http_session is None: return {}
 
     loaded_users = {}
-    # Загружаем ВСЕ данные, лимита нет, но Supabase может отдать максимум 1000 строк за раз
-    # Для начала хватит, при росте нужно будет делать пагинацию
     url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
     
     try:
@@ -126,9 +125,9 @@ async def load_all_users():
                     loaded_users[int(user_id)] = user_data
                 logging.warning(f"📥 Загружено {len(loaded_users)} пользователей.")
             else:
-                logging.error(f"Ошибка загрузки: {resp.status}")
+                logging.error(f"Load Error: {resp.status}")
     except Exception as e:
-        logging.error(f"Критическая ошибка загрузки: {e}")
+        logging.error(f"Load Exception: {e}")
         
     return loaded_users
 
