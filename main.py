@@ -256,13 +256,10 @@ async def add_xp(user_id, amount):
     if user_id not in users: return
     user = users[user_id]
     
-    # Инициализация полей опыта, если их нет
     if "xp" not in user: user["xp"] = 0
     if "level" not in user: user["level"] = 1
     
     user["xp"] += amount
-    
-    # Проверка на повышение уровня
     leveled_up = False
     rewards_text = []
     
@@ -273,19 +270,44 @@ async def add_xp(user_id, amount):
             user["level"] += 1
             leveled_up = True
             
-            # Награды
-            coins_reward = user["level"] * 1000
+            # --- ЛОГИКА КРАСИВЫХ НАГРАД ---
+            lvl = user["level"]
+            if lvl == 2: coins_reward = 2000
+            elif lvl == 3: coins_reward = 10000
+            elif lvl == 4: coins_reward = 50000
+            elif lvl == 5: coins_reward = 150000
+            else:
+                # Масштабируемая награда: уровень^2 * 10 000, округленная до тысяч
+                coins_reward = int(round((lvl ** 2) * 10000, -3))
+            
             user["balance"] += coins_reward
             rewards_text.append(f"💰 {coins_reward:,} монет".replace(",", " "))
             
-            if user["level"] % 5 == 0:
-                user["diamonds"] += 5
-                rewards_text.append("💎 5 алмазов")
-            elif user["level"] % 10 == 0:
-                user["diamonds"] += 10
-                rewards_text.append("💎 10 алмазов")
+            # --- ЛОГИКА АЛМАЗОВ ---
+            diam_bonus = 0
+            if lvl % 5 == 0: diam_bonus += 5
+            if lvl % 10 == 0: diam_bonus += 10
+            
+            if diam_bonus > 0:
+                user["diamonds"] += diam_bonus
+                user["total_diamonds_earned"] += diam_bonus
+                rewards_text.append(f"💎 {diam_bonus} алмазов")
         else:
             break
+            
+    if leveled_up:
+        # Сохраняем сразу, чтобы не потерять прогресс
+        await database.save_user(user_id, user)
+        try:
+            reward_str = "\n".join(rewards_text)
+            await bot.send_message(
+                user_id,
+                f"🎉 <b>НОВЫЙ УРОВЕНЬ!</b>\n\n"
+                f"🆙 Ты достиг <b>{user['level']} уровня</b>!\n"
+                f"🎁 Награды:\n{reward_str}",
+                parse_mode="HTML"
+            )
+        except: pass
             
     if leveled_up:
         # Сохраняем сразу
