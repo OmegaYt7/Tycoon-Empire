@@ -31,7 +31,7 @@ users = {}
 # ═══════════════════════════════════════════════════════════
 async def autosave_loop():
     while True:
-        await asyncio.sleep(60) # Каждую минуту
+        await asyncio.sleep(120) # Каждую минуту
         try:
             await database.save_all_users(users)
         except Exception as e:
