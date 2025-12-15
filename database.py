@@ -2,7 +2,7 @@ import aiohttp
 import json
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════
 # КОНФИГУРАЦИЯ SUPABASE
@@ -13,38 +13,32 @@ SUPABASE_KEY = "sb_secret_bDIUtmYZ2Zx5Rz3EauEhlw_sbrmR6y9"
 
 http_session = None
 
+# Убрали "Connection": "keep-alive", чтобы aiohttp сам решал вопросы переподключения
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=minimal",
-    "Connection": "keep-alive"
+    "Prefer": "return=minimal"
 }
-
-# ═══════════════════════════════════════════════════════════
-# ФУНКЦИИ БАЗЫ ДАННЫХ
-# ═══════════════════════════════════════════════════════════
 
 async def create_pool():
     global http_session
-    if http_session is None:
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+    if http_session is None or http_session.closed:
+        # Увеличили тайм-ауты для стабильности
+        timeout = aiohttp.ClientTimeout(total=45, connect=15, sock_connect=15)
         http_session = aiohttp.ClientSession(headers=HEADERS, timeout=timeout)
-        logging.warning("✅ Инициализация сессии Supabase...")
+        logging.warning("✅ Сессия Supabase инициализирована.")
 
 async def close_session():
     global http_session
-    if http_session:
+    if http_session and not http_session.closed:
         await http_session.close()
         logging.warning("🔌 Сессия Supabase закрыта.")
 
-async def create_table():
-    pass
-
 async def save_user(user_id, user_data):
-    """Сохраняет одного пользователя. Мгновенная запись."""
+    """Сохраняет одного пользователя с защитой от ошибок."""
     global http_session
-    if http_session is None: await create_pool()
+    if http_session is None or http_session.closed: await create_pool()
     
     url = f"{SUPABASE_URL}/rest/v1/users"
     headers = {"Prefer": "resolution=merge-duplicates"}
@@ -68,11 +62,11 @@ async def save_user(user_id, user_data):
         logging.error(f"Save User Exception {user_id}: {e}")
 
 async def save_all_users(users_dict):
-    """Массовое сохранение с задержкой, чтобы не получить бан API."""
+    """Массовое сохранение с системой повторных попыток (Retries)."""
     if not users_dict: return
 
     global http_session
-    if http_session is None: await create_pool()
+    if http_session is None or http_session.closed: await create_pool()
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_list = []
@@ -96,18 +90,23 @@ async def save_all_users(users_dict):
     
     for i in range(0, len(data_list), chunk_size):
         chunk = data_list[i:i + chunk_size]
-        try:
-            async with http_session.post(url, headers=headers, json=chunk) as resp:
-                if resp.status not in [200, 201, 204]:
+        # Пробуем отправить 3 раза, если сеть глючит
+        for attempt in range(3):
+            try:
+                async with http_session.post(url, headers=headers, json=chunk) as resp:
+                    if resp.status in [200, 201, 204]:
+                        break 
                     logging.error(f"Bulk Save Error: {resp.status}")
-            # Небольшая пауза между чанками, чтобы Supabase не ругался
-            await asyncio.sleep(0.1) 
-        except Exception as e:
-            logging.error(f"Bulk Save Exception: {e}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt == 2:
+                    logging.error(f"Bulk Save Final Failure: {e}")
+                else:
+                    await asyncio.sleep(1) # Ждем секунду перед повтором
+        await asyncio.sleep(0.3) # Пауза между чанками для API
 
 async def load_all_users():
     global http_session
-    if http_session is None: return {}
+    if http_session is None or http_session.closed: await create_pool()
 
     loaded_users = {}
     url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
@@ -133,7 +132,7 @@ async def load_all_users():
 
 async def export_users_to_json_file():
     global http_session
-    if http_session is None: return None
+    if http_session is None or http_session.closed: await create_pool()
     url = f"{SUPABASE_URL}/rest/v1/users?select=json_data"
     filename = "users_export.json"
     try:
