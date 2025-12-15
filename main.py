@@ -31,8 +31,7 @@ users = {}
 # ═══════════════════════════════════════════════════════════
 async def autosave_loop():
     while True:
-        # Сохраняем раз в 60 секунд на всякий случай
-        await asyncio.sleep(60)
+        await asyncio.sleep(60) # Каждую минуту
         try:
             await database.save_all_users(users)
         except Exception as e:
@@ -46,6 +45,11 @@ BASE_DIAMOND_CHANCE = 0.001
 ITEMS_PER_PAGE = 10
 NICKNAME_CHANGE_COST = 1000
 NICKNAME_CHANGE_DAYS = 7
+
+# --- ОПЫТ (XP) ---
+# Базовый опыт для уровня 1 -> 2
+XP_BASE_REQ = 100 
+XP_MULTIPLIER = 1.2 # Коэффициент роста (каждый уровень требует на 20% больше)
 
 FUNNY_RESPONSES = [
     "Моя твоя не понимать... Тапай лучше! 👆",
@@ -100,7 +104,6 @@ upgrades_info = [
     {"key": "alien_finger", "name": "👽 Инопланетный палец", "bonus": 10000000, "cost": 10000000000, "funny": "Технологии внеземных цивилизаций."},
     {"key": "dragon_finger", "name": "🐉 Драконий палец", "bonus": 20000000, "cost": 20000000000, "funny": "ОГНЕДЫШАЩИЙ ТАП-МОНСТР!"},
     
-    # 21-30 НОВЫЕ ПАЛЬЦЫ
     {"key": "void_finger", "name": "⚫️ Палец Пустоты", "bonus": 50000000, "cost": 50000000000, "funny": "Тапает так, что даже само существование монет сомневается."},
     {"key": "celestial_finger", "name": "✨ Небесный Палец", "bonus": 100000000, "cost": 100000000000, "funny": "Сверкает, как миллиард звёзд. И тапает также мощно."},
     {"key": "harmonic_resonance", "name": "🎶 Гармоничный Резонанс", "bonus": 200000000, "cost": 500000000000, "funny": "Вибрация богатства, притягивающая монеты."},
@@ -138,7 +141,6 @@ buildings_info = [
     {"key": "empire", "name": "🏰 Империя", "base_income": 500000, "upgrade_income_bonus": 250000, "base_capacity": 100000000, "cost": 1500000000, "upgrade_cost_base": 500000000, "upgrade_capacity_bonus": 50000000, "funny": "Ты — король мира."},
     {"key": "dyson_sphere", "name": "☀️ Сфера Дайсона", "base_income": 1000000, "upgrade_income_bonus": 400000, "base_capacity": 200000000, "cost": 3000000000, "upgrade_cost_base": 1000000000, "upgrade_capacity_bonus": 80000000, "funny": "Энергия целой звезды в кармане."},
     
-    # 21-30 НОВЫЕ СООРУЖЕНИЯ
     {"key": "electronic_judge", "name": "⚖️ Электронный Судья", "base_income": 5000000, "upgrade_income_bonus": 1000000, "base_capacity": 1000000000, "cost": 5000000000, "upgrade_cost_base": 2000000000, "upgrade_capacity_bonus": 200000000, "funny": "Искусственный интеллект, который решает, кто прав, а кто богат."},
     {"key": "data_farm", "name": "💾 Ферма данных", "base_income": 25000000, "upgrade_income_bonus": 5000000, "base_capacity": 5000000000, "cost": 20000000000, "upgrade_cost_base": 5000000000, "upgrade_capacity_bonus": 1000000000, "funny": "Самый дорогой товар в мире — информация, и она вся твоя."},
     {"key": "stock_exchange", "name": "📈 Фондовая Биржа", "base_income": 50000000, "upgrade_income_bonus": 23000000, "base_capacity": 10000000000, "cost": 100000000000, "upgrade_cost_base": 25000000000, "upgrade_capacity_bonus": 4600000000, "funny": "Когда ты чихаешь, мировой рынок падает."},
@@ -207,17 +209,17 @@ main_quests_info = [
 # РЕГИСТРАЦИЯ И ХЕЛПЕРЫ
 # ═══════════════════════════════════════════════════════════
 
-# Новая функция для полного пересчета стат игрока на основе актуального конфига
 def recalculate_user_stats(user_id):
     if user_id not in users: return
     user = users[user_id]
     
-    # 1. Пересчет силы клика
-    current_tap = 1
+    # Считаем тап с нуля. Деревянный палец = 1, поэтому база 0.
+    current_tap = 0
     for info in upgrades_info:
         if user["upgrades"].get(info["key"]) == 1:
             current_tap += info["bonus"]
-    
+            
+    # Добавляем бонусы от квестов
     quest_tap_bonus = 0
     quest_chance_bonus = 0.0
     for q_key in user["completed_quests"]:
@@ -228,17 +230,81 @@ def recalculate_user_stats(user_id):
             
     user["tap_mult"] = current_tap + quest_tap_bonus
     user["diamond_chance_bonus"] = quest_chance_bonus
-
-    # 2. Пересчет пассивного дохода
     calculate_passive(user)
 
 def check_daily_reset(user):
     today = date.today().isoformat()
+    # Логика сброса серии
+    if user.get("last_daily_done_date"):
+        last_done = date.fromisoformat(user["last_daily_done_date"])
+        yesterday = date.today() - timedelta(days=1)
+        # Если последнее задание сделано раньше вчерашнего дня, серия прерывается
+        if last_done < yesterday:
+            user["daily_streak"] = 0
+
     if user["daily_progress"]["date"] != today:
         user["daily_progress"] = {
             "date": today,
             "clicks": 0, "upgrades": 0, "claims": 0, "completed": [], "all_done": False, "notified": []
         }
+
+def get_level_exp(level):
+    """Возвращает опыт, нужный для получения следующего уровня"""
+    return int(XP_BASE_REQ * (XP_MULTIPLIER ** (level - 1)))
+
+async def add_xp(user_id, amount):
+    if user_id not in users: return
+    user = users[user_id]
+    
+    # Инициализация полей опыта, если их нет
+    if "xp" not in user: user["xp"] = 0
+    if "level" not in user: user["level"] = 1
+    
+    user["xp"] += amount
+    
+    # Проверка на повышение уровня
+    leveled_up = False
+    rewards_text = []
+    
+    while True:
+        needed = get_level_exp(user["level"])
+        if user["xp"] >= needed:
+            user["xp"] -= needed
+            user["level"] += 1
+            leveled_up = True
+            
+            # Награды
+            coins_reward = user["level"] * 1000
+            user["balance"] += coins_reward
+            rewards_text.append(f"💰 {coins_reward:,} монет".replace(",", " "))
+            
+            if user["level"] % 5 == 0:
+                user["diamonds"] += 5
+                rewards_text.append("💎 5 алмазов")
+            elif user["level"] % 10 == 0:
+                user["diamonds"] += 10
+                rewards_text.append("💎 10 алмазов")
+        else:
+            break
+            
+    if leveled_up:
+        # Сохраняем сразу
+        await database.save_user(user_id, user)
+        try:
+            reward_str = "\n".join(rewards_text)
+            await bot.send_message(
+                user_id,
+                f"🎉 **НОВЫЙ УРОВЕНЬ!**\n\n"
+                f"🆙 Ты достиг **{user['level']} уровня**!\n"
+                f"🎁 Награды:\n{reward_str}"
+            )
+        except: pass
+
+def get_xp_bar(current, target, length=8):
+    percent = min(current / target, 1.0)
+    filled_length = int(length * percent)
+    bar = "🟦" * filled_length + "⬜" * (length - filled_length)
+    return f"{bar} {current}/{target} XP"
 
 def generate_unique_id():
     while True:
@@ -254,7 +320,6 @@ def generate_unique_id():
             return new_id
 
 def get_current_finger_info(user):
-    # При вызове обновляем данные
     recalculate_user_stats(list(users.keys())[list(users.values()).index(user)]) 
     
     current_finger_name = upgrades_info[0]["name"]
@@ -316,7 +381,6 @@ async def update_passive_income(user_id: int):
                 minutes_passed = (now - last_upd) / 60
                 full_minutes = int(minutes_passed)
                 
-                # НОВАЯ ФОРМУЛА: База + (Бонус * (Уровень - 1))
                 bonus = info.get("upgrade_income_bonus", info["base_income"])
                 income_per_min = info["base_income"] + (bonus * (level - 1))
                 
@@ -462,6 +526,8 @@ async def start(message: Message):
             "referrals": 0,
             "total_clicks": 0,
             "total_spent": 0,
+            "xp": 0,
+            "level": 1,
             "upgrades": upgrades,
             "buildings_levels": buildings_levels,
             "buildings_accumulated": buildings_accumulated,
@@ -554,11 +620,9 @@ async def promo_handler(message: Message):
 async def handle_text(message: Message):
     user_id = message.from_user.id
 
-    # --- ИСПРАВЛЕНИЕ ОШИБКИ KEYERROR ---
     if user_id not in users:
         await message.answer("⚠️ Бот был перезагружен. Введите /start, чтобы продолжить.")
         return
-    # -----------------------------------
     
     if user_id in users:
         current_username = message.from_user.username
@@ -669,7 +733,6 @@ async def broadcast_send_handler(callback: CallbackQuery):
     parts = callback.data.split("_")
     msg_type = parts[2]
     
-    # Обработка новой кнопки "Работы завершены" (без времени)
     if msg_type == "finished":
         send_text = admin_panel.get_broadcast_text("finished")
         await callback.message.edit_text("🚀 **Отправка сообщения о завершении...**", parse_mode="Markdown")
@@ -791,7 +854,6 @@ async def admin_wipe_confirm(callback: CallbackQuery):
         await callback.answer("Ошибка: Игрок не найден!", show_alert=True)
         return
     
-    # Сразу сохраняем очищенного пользователя
     await database.save_user(target_id, users[target_id])
 
     recalculate_user_stats(target_id)
@@ -1087,9 +1149,14 @@ async def complete_quest(callback: CallbackQuery):
     user["balance"] += quest.get("rew_coins", 0)
     user["diamonds"] += quest.get("rew_diamonds", 0)
     
-    recalculate_user_stats(user_id)
+    # Даем опыт за выполнение квеста (зависит от награды монет - чем сложнее, тем больше)
+    xp_amount = max(10, int(math.sqrt(quest.get("rew_coins", 100))))
+    await add_xp(user_id, xp_amount)
     
-    await callback.answer("🎉 Задание выполнено!", show_alert=True)
+    recalculate_user_stats(user_id)
+    await database.save_user(user_id, user)
+    
+    await callback.answer(f"🎉 Выполнено! (+{xp_amount} XP)", show_alert=True)
     new_data = f"view_quest_{quest_key}"
     new_callback = callback.model_copy(update={'data': new_data})
     await view_quest(new_callback)
@@ -1109,8 +1176,16 @@ async def profile(message: Message):
     tap_bonus_fmt = f"{current_finger_bonus:,}".replace(",", " ")
     quest_count_fmt = f"{len(user['completed_quests']):,}".replace(",", " ")
     streak_fmt = f"{user['daily_streak']:,}".replace(",", " ")
+    
+    # Опыт
+    user_xp = user.get("xp", 0)
+    user_lvl = user.get("level", 1)
+    next_level_xp = get_level_exp(user_lvl)
+    xp_bar = get_xp_bar(user_xp, next_level_xp)
+    
     text = (f"👑 <b>ТВОЙ ПРОФИЛЬ</b> 👑\n\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
+            f"🆙 <b>LVL {user_lvl}</b>\n{xp_bar}\n\n"
             f"📅 В игре с: {reg_date}\n"
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
             f"💰 Баланс: {user['balance']:,} монет\n"
@@ -1208,12 +1283,14 @@ async def buy_upgrade(callback: CallbackQuery):
     user["total_spent"] += info["cost"]
     user["upgrades"][key] = 1
     
-    recalculate_user_stats(user_id)
+    # ОПЫТ ЗА ПОКУПКУ ПАЛЬЦА
+    xp_amount = max(5, int(math.sqrt(info["cost"])))
+    await add_xp(user_id, xp_amount)
     
-    # СОХРАНЕНИЕ
+    recalculate_user_stats(user_id)
     await database.save_user(user_id, user)
     
-    await callback.answer(f"🎉 Ты купил {info['name']}!", show_alert=True)
+    await callback.answer(f"🎉 Ты купил {info['name']}! (+{xp_amount} XP)", show_alert=True)
     await check_quest_notifications(callback.message, user_id)
     try: await callback.message.delete()
     except: pass
@@ -1293,7 +1370,9 @@ async def view_building(callback: CallbackQuery):
                 f"📦 Накоплено: **{accumulated:,} / {current_capacity:,}**\n"
                 f"{info['funny']}").replace(",", " ")
         if accumulated >= current_income: kb.inline_keyboard.append([InlineKeyboardButton(text=f"💰 Забрать {accumulated:,}", callback_data=f"claim_building_{key}_{page}")])
-        kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить (+{bonus:,}/мин) | {upgrade_cost:,}", callback_data=f"upgrade_building_{key}_{page}")])
+        
+        # Кнопка улучшения без текста в скобках
+        kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить | {upgrade_cost:,}", callback_data=f"upgrade_building_{key}_{page}")])
         
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"build_page_{page}")])
     try: await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
@@ -1324,10 +1403,13 @@ async def buy_building(callback: CallbackQuery):
     user["buildings_last_update"][key] = datetime.now().timestamp()
     calculate_passive(user)
     
-    # СОХРАНЕНИЕ
+    # ОПЫТ ЗА ПОСТРОЙКУ
+    xp_amount = max(10, int(math.sqrt(info["cost"])))
+    await add_xp(user_id, xp_amount)
+    
     await database.save_user(user_id, user)
     
-    await callback.answer(f"🎉 Построено: {info['name']}!", show_alert=True)
+    await callback.answer(f"🎉 Построено: {info['name']}! (+{xp_amount} XP)", show_alert=True)
     await check_quest_notifications(callback.message, user_id)
     new_data = f"view_building_{key}_{page}"
     new_callback = callback.model_copy(update={'data': new_data})
@@ -1360,10 +1442,13 @@ async def upgrade_building(callback: CallbackQuery):
     user["buildings_last_update"][key] = datetime.now().timestamp()
     calculate_passive(user)
     
-    # СОХРАНЕНИЕ
+    # ОПЫТ ЗА УЛУЧШЕНИЕ
+    xp_amount = max(5, int(math.sqrt(upgrade_cost)))
+    await add_xp(user_id, xp_amount)
+    
     await database.save_user(user_id, user)
     
-    await callback.answer(f"🎉 Улучшено!", show_alert=True)
+    await callback.answer(f"🎉 Улучшено! (+{xp_amount} XP)", show_alert=True)
     await check_daily_notifications(user_id)
     new_data = f"view_building_{key}_{page}"
     new_callback = callback.model_copy(update={'data': new_data})
@@ -1404,8 +1489,6 @@ async def claim_building(callback: CallbackQuery):
 async def referral(message: Message):
     username = (await bot.get_me()).username
     link = f"https://t.me/{username}?start={message.from_user.id}"
-    
-    # ЗДЕСЬ ДОБАВЛЕН ПРОБЕЛ
     refs_count = f"{users[message.from_user.id]['referrals']:,}".replace(",", " ")
     
     text = (f"👥 **ТВОЯ РЕФЕРАЛЬНАЯ ССЫЛКА** 👥\n\n{link}\n\nПриглашай друзей и получай бонусы за каждого!\nСейчас у тебя: {refs_count} друзей 🔥")
@@ -1472,7 +1555,7 @@ async def main():
         logging.warning("🛑 Получен сигнал остановки! Сохраняем данные...")
         stop_event.set()
 
-    # Регистрируем сигналы SIGTERM и SIGINT
+    # Регистрируем сигналы
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
             loop.add_signal_handler(sig, signal_handler)
@@ -1483,7 +1566,7 @@ async def main():
         loaded_data = await database.load_all_users()
         users.update(loaded_data)
         
-        # Пересчет статов (важно для применения конфига)
+        # Пересчет статов
         for uid in users:
             recalculate_user_stats(uid)
         
