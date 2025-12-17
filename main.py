@@ -273,12 +273,15 @@ async def add_xp(user_id, amount):
             # --- ЛОГИКА КРАСИВЫХ НАГРАД ---
             lvl = user["level"]
             if lvl == 2: coins_reward = 2000
-            elif lvl == 3: coins_reward = 10000
-            elif lvl == 4: coins_reward = 50000
-            elif lvl == 5: coins_reward = 150000
+            elif lvl == 3: coins_reward = 5000
+            elif lvl == 4: coins_reward = 10000
+            elif lvl == 5: coins_reward = 20000
             else:
                 # Масштабируемая награда: уровень^2 * 10 000, округленная до тысяч
-                coins_reward = int(round((lvl ** 2) * 10000, -3))
+                base_reward = 20000  # Награда за 5-й уровень
+                multiplier = 1.5     # Рост на 50% каждый уровень (можно менять)
+                oins_reward = base_reward * (multiplier ** (lvl - 5))
+            coins_reward = int(round(coins_reward, -3))
             
             user["balance"] += coins_reward
             rewards_text.append(f"💰 {coins_reward:,} монет".replace(",", " "))
