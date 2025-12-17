@@ -5,6 +5,8 @@ import math
 import os
 import signal
 import sys
+import os
+from aiohttp import web
 from datetime import datetime, timedelta, date
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -36,6 +38,24 @@ async def autosave_loop():
             await database.save_all_users(users)
         except Exception as e:
             logging.error(f"Ошибка автосохранения: {e}")
+
+# ═══════════════════════════════════════════════════════════
+# СЕРВЕР ДЛЯ RENDER (ЧТОБЫ БОТ НЕ ВЫКЛЮЧАЛСЯ)
+# ═══════════════════════════════════════════════════════════
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_render_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render сам назначит порт через переменную PORT
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.warning(f"✅ Web server started on port {port}")
+
 
 # ═══════════════════════════════════════════════════════════
 # КОНФИГУРАЦИЯ И ДАННЫЕ
@@ -280,7 +300,7 @@ async def add_xp(user_id, amount):
                 # Масштабируемая награда: уровень^2 * 10 000, округленная до тысяч
                 base_reward = 20000  # Награда за 5-й уровень
                 multiplier = 1.5     # Рост на 50% каждый уровень (можно менять)
-                oins_reward = base_reward * (multiplier ** (lvl - 5))
+                coins_reward = base_reward * (multiplier ** (lvl - 5))
             coins_reward = int(round(coins_reward, -3))
             
             user["balance"] += coins_reward
@@ -1570,6 +1590,20 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
+    # --- СЕКЦИЯ ДЛЯ RENDER (ЧТОБЫ НЕ ВЫКЛЮЧАЛСЯ) ---
+    async def handle(request):
+        return web.Response(text="Bot is running!")
+
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.warning(f"🌐 Web server started on port {port}")
+    # ----------------------------------------------
+
     await database.get_session() 
     
     # Обработка сигналов остановки (для хостинга)
@@ -1596,9 +1630,10 @@ async def main():
             recalculate_user_stats(uid)
         
         save_task = asyncio.create_task(autosave_loop())
+        # Запускаем поллинг как задачу
         polling_task = asyncio.create_task(dp.start_polling(bot))
         
-        # Ждем сигнал от хостинга
+        # Ждем сигнал от хостинга (Render пришлет SIGTERM перед выключением)
         await stop_event.wait()
         
         logging.warning("🛑 Останавливаем поллинг...")
@@ -1610,13 +1645,5 @@ async def main():
         logging.warning("🛑 ФИНАЛЬНОЕ СОХРАНЕНИЕ ДАННЫХ...")
         await database.save_all_users(users)
         await database.close_session()
+        await runner.cleanup() # Закрываем веб-сервер
         logging.warning("✅ Все данные сохранены. Бот выключен.")
-
-if __name__ == "__main__":
-    try:
-        if sys.platform == 'win32':
-             asyncio.run(main())
-        else:
-             asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        pass
