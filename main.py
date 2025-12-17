@@ -1570,7 +1570,7 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    await database.create_pool() 
+    await database.get_session() 
     
     # Обработка сигналов остановки (для хостинга)
     loop = asyncio.get_running_loop()
