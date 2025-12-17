@@ -17,7 +17,7 @@ HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=minimal"
+    "Prefer": "return=minimal, resolution=merge-duplicates"
 }
 
 async def get_session():
