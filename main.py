@@ -5,7 +5,6 @@ import math
 import os
 import signal
 import sys
-import os
 from aiohttp import web
 from datetime import datetime, timedelta, date
 from aiogram import Bot, Dispatcher, F
@@ -17,12 +16,13 @@ from aiogram.types import (
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Импорты модулей
+# Импорты твоих модулей
 import config
 import database
 import promocodes
 import admin_panel
 
+# Настройка логирования
 logging.basicConfig(level=logging.WARNING)
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -33,7 +33,7 @@ users = {}
 # ═══════════════════════════════════════════════════════════
 async def autosave_loop():
     while True:
-        await asyncio.sleep(120) # Каждую минуту
+        await asyncio.sleep(120)  # Сохраняем каждые 2 минуты
         try:
             await database.save_all_users(users)
         except Exception as e:
@@ -42,19 +42,22 @@ async def autosave_loop():
 # ═══════════════════════════════════════════════════════════
 # СЕРВЕР ДЛЯ RENDER (ЧТОБЫ БОТ НЕ ВЫКЛЮЧАЛСЯ)
 # ═══════════════════════════════════════════════════════════
-async def handle(request):
-    return web.Response(text="Bot is running!")
+async def handle_health_check(request):
+    return web.Response(text="Bot is running!", status=200)
 
 async def start_render_server():
     app = web.Application()
-    app.router.add_get("/", handle)
+    app.router.add_get("/", handle_health_check)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Render сам назначит порт через переменную PORT
-    port = int(os.environ.get("PORT", 10000))
+    
+    # Render передает порт в переменной окружения PORT
+    port = int(os.environ.get("PORT", 8080)) 
+    
+    # Обязательно 0.0.0.0 для внешнего доступа
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logging.warning(f"✅ Web server started on port {port}")
+    logging.warning(f"🌐 Web server started on port {port}")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1590,23 +1593,10 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # --- СЕКЦИЯ ДЛЯ RENDER (ЧТОБЫ НЕ ВЫКЛЮЧАЛСЯ) ---
-    async def handle(request):
-        return web.Response(text="Bot is running!")
-
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logging.warning(f"🌐 Web server started on port {port}")
-    # ----------------------------------------------
-
-    await database.get_session() 
+    # 1. Инициализируем соединение с БД (функция из database.py)
+    await database.create_pool() 
     
-    # Обработка сигналов остановки (для хостинга)
+    # 2. Обработка сигналов остановки для Render
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -1614,7 +1604,6 @@ async def main():
         logging.warning("🛑 Получен сигнал остановки! Сохраняем данные...")
         stop_event.set()
 
-    # Регистрируем сигналы
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
             loop.add_signal_handler(sig, signal_handler)
@@ -1622,28 +1611,42 @@ async def main():
             pass
 
     try:
+        # 3. Загружаем данные
         loaded_data = await database.load_all_users()
         users.update(loaded_data)
         
-        # Пересчет статов
+        # Пересчет статов для всех
         for uid in users:
             recalculate_user_stats(uid)
         
+        # 4. ЗАПУСКАЕМ ВЕБ-СЕРВЕР (Критично для Render!)
+        await start_render_server()
+        
+        # 5. Запускаем фоновые задачи
         save_task = asyncio.create_task(autosave_loop())
-        # Запускаем поллинг как задачу
+        
+        # 6. Запускаем бота
+        logging.warning("🚀 Бот запускается...")
         polling_task = asyncio.create_task(dp.start_polling(bot))
         
-        # Ждем сигнал от хостинга (Render пришлет SIGTERM перед выключением)
+        # Ждем сигнал выключения от Render
         await stop_event.wait()
         
-        logging.warning("🛑 Останавливаем поллинг...")
+        # 7. Корректное завершение
+        logging.warning("🛑 Останавливаем процессы...")
         await dp.stop_polling()
         polling_task.cancel()
         save_task.cancel()
         
-    finally:
-        logging.warning("🛑 ФИНАЛЬНОЕ СОХРАНЕНИЕ ДАННЫХ...")
+        # Финальное сохранение
         await database.save_all_users(users)
+        
+    finally:
         await database.close_session()
-        await runner.cleanup() # Закрываем веб-сервер
-        logging.warning("✅ Все данные сохранены. Бот выключен.")
+        logging.warning("✅ Бот успешно остановлен.")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
