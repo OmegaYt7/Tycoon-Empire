@@ -13,69 +13,37 @@ SUPABASE_KEY = "sb_secret_bDIUtmYZ2Zx5Rz3EauEhlw_sbrmR6y9"
 
 http_session = None
 
+# Убрали "Connection": "keep-alive", чтобы aiohttp сам решал вопросы переподключения
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=minimal, resolution=merge-duplicates"
+    "Prefer": "return=minimal"
 }
 
-async def get_session():
-    """Возвращает живую сессию или создает новую."""
+async def create_pool():
+    """Инициализирует сессию aiohttp для работы с API Supabase."""
     global http_session
     if http_session is None or http_session.closed:
-        # Устанавливаем тайм-ауты и коннектор для стабильности
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
-        connector = aiohttp.TCPConnector(enable_cleanup_closed=True)
-        http_session = aiohttp.ClientSession(headers=HEADERS, timeout=timeout, connector=connector)
-        logging.warning("✅ (Re)created Supabase session.")
-    return http_session
+        # Увеличили тайм-ауты для стабильности
+        timeout = aiohttp.ClientTimeout(total=45, connect=15, sock_connect=15)
+        http_session = aiohttp.ClientSession(headers=HEADERS, timeout=timeout)
+        logging.warning("✅ Сессия Supabase инициализирована.")
 
-async def reset_session():
-    """Сбрасывает сессию принудительно (при ошибках сети)."""
+async def close_session():
+    """Закрывает сессию aiohttp при остановке бота."""
     global http_session
     if http_session and not http_session.closed:
         await http_session.close()
-    http_session = None
-    logging.warning("🔌 Session reset due to error.")
-
-async def perform_request(method, url, json_data=None):
-    """
-    Обертка для запросов с автоматическим ретраем (повторной попыткой)
-    при разрыве соединения (Connection reset by peer).
-    """
-    for attempt in range(3):
-        session = await get_session()
-        try:
-            if method == 'POST':
-                async with session.post(url, json=json_data) as resp:
-                    # Если успех - возвращаем статус
-                    if resp.status in [200, 201, 204]:
-                        return resp.status, None
-                    # Если ошибка сервера (5xx) или лимит запросов (429) - пробуем снова
-                    if resp.status >= 500 or resp.status == 429:
-                        logging.warning(f"Server error {resp.status}, retrying...")
-                        await asyncio.sleep(1)
-                        continue
-                    # Иначе возвращаем ошибку
-                    return resp.status, await resp.text()
-            elif method == 'GET':
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        return 200, await resp.json()
-                    return resp.status, None
-                    
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-            # Ловим разрывы соединения и ошибки DNS
-            logging.error(f"Network error (attempt {attempt+1}/3): {e}")
-            await reset_session() # Сбрасываем сессию, чтобы следующая попытка создала новую
-            await asyncio.sleep(1)
-            
-    return 0, "Max retries exceeded"
+        logging.warning("🔌 Сессия Supabase закрыта.")
 
 async def save_user(user_id, user_data):
-    """Сохраняет одного пользователя (Надежно)."""
+    """Сохраняет данные одного пользователя в базу данных."""
+    global http_session
+    if http_session is None or http_session.closed: await create_pool()
+    
     url = f"{SUPABASE_URL}/rest/v1/users"
+    headers = {"Prefer": "resolution=merge-duplicates"}
     
     row = {
         "user_id": user_id,
@@ -88,15 +56,19 @@ async def save_user(user_id, user_data):
         "json_data": user_data
     }
     
-    # Supabase требует список для upsert
-    status, error = await perform_request('POST', url, json_data=[row])
-    
-    if status not in [200, 201, 204]:
-        logging.error(f"❌ Failed to save user {user_id}: Status {status} | {error}")
+    try:
+        async with http_session.post(url, headers=headers, json=[row]) as resp:
+            if resp.status not in [200, 201, 204]:
+                logging.error(f"Save User Error {user_id}: {resp.status}")
+    except Exception as e:
+        logging.error(f"Save User Exception {user_id}: {e}")
 
 async def save_all_users(users_dict):
-    """Массовое сохранение (Надежно, с чанками)."""
+    """Массовое сохранение всех пользователей с системой повторных попыток."""
     if not users_dict: return
+
+    global http_session
+    if http_session is None or http_session.closed: await create_pool()
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_list = []
@@ -116,56 +88,65 @@ async def save_all_users(users_dict):
 
     chunk_size = 50 
     url = f"{SUPABASE_URL}/rest/v1/users"
+    headers = {"Prefer": "resolution=merge-duplicates"} 
     
-    # Разбиваем на пакеты по 50 штук
     for i in range(0, len(data_list), chunk_size):
         chunk = data_list[i:i + chunk_size]
-        status, error = await perform_request('POST', url, json_data=chunk)
-        
-        if status not in [200, 201, 204]:
-             logging.error(f"❌ Bulk save chunk failed: {status}")
-        
-        await asyncio.sleep(0.2)
+        # Пробуем отправить 3 раза, если сеть нестабильна
+        for attempt in range(3):
+            try:
+                async with http_session.post(url, headers=headers, json=chunk) as resp:
+                    if resp.status in [200, 201, 204]:
+                        break 
+                    logging.error(f"Bulk Save Error: {resp.status}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt == 2:
+                    logging.error(f"Bulk Save Final Failure: {e}")
+                else:
+                    await asyncio.sleep(1) # Ожидание перед повтором
+        await asyncio.sleep(0.3) # Пауза для соблюдения лимитов API
 
 async def load_all_users():
-    """Загрузка всех пользователей."""
+    """Загружает всех пользователей из таблицы Supabase."""
+    global http_session
+    if http_session is None or http_session.closed: await create_pool()
+
+    loaded_users = {}
     url = f"{SUPABASE_URL}/rest/v1/users?select=user_id,json_data"
     
-    status, data = await perform_request('GET', url)
-    loaded_users = {}
-    
-    if status == 200 and data:
-        for row in data:
-            user_id = row['user_id']
-            user_data = row['json_data']
-            if isinstance(user_data, str):
-                try: user_data = json.loads(user_data)
-                except: continue
-            loaded_users[int(user_id)] = user_data
-        logging.warning(f"📥 Загружено {len(loaded_users)} пользователей.")
-    else:
-        logging.error(f"❌ Load Error: Status {status}")
+    try:
+        async with http_session.get(url) as resp:
+            if resp.status == 200:
+                rows = await resp.json()
+                for row in rows:
+                    user_id = row['user_id']
+                    user_data = row['json_data']
+                    if isinstance(user_data, str):
+                        try: user_data = json.loads(user_data)
+                        except: continue
+                    loaded_users[int(user_id)] = user_data
+                logging.warning(f"📥 Загружено {len(loaded_users)} пользователей.")
+            else:
+                logging.error(f"Load Error: {resp.status}")
+    except Exception as e:
+        logging.error(f"Load Exception: {e}")
         
     return loaded_users
 
 async def export_users_to_json_file():
-    """Экспорт базы в файл."""
+    """Экспортирует данные всех пользователей в локальный JSON файл."""
+    global http_session
+    if http_session is None or http_session.closed: await create_pool()
     url = f"{SUPABASE_URL}/rest/v1/users?select=json_data"
-    status, rows = await perform_request('GET', url)
-    
-    if status == 200 and rows:
-        all_data = [row['json_data'] for row in rows]
-        filename = "users_export.json"
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(all_data, f, ensure_ascii=False, indent=4)
-        return filename
+    filename = "users_export.json"
+    try:
+        async with http_session.get(url) as resp:
+            if resp.status == 200:
+                rows = await resp.json()
+                all_data = [row['json_data'] for row in rows]
+                with open(filename, "w", encoding="utf-8") as f:
+                    json.dump(all_data, f, ensure_ascii=False, indent=4)
+                return filename
+    except Exception:
+        pass
     return None
-
-async def close_session():
-    """Закрытие сессии."""
-    await reset_session()
-
-# Если нужно создать таблицу, Supabase REST API не создает таблицы, это делается через SQL Editor в дашборде.
-# Эта функция оставлена для совместимости, но она пустая.
-async def create_table():
-    pass
