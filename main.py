@@ -228,6 +228,15 @@ main_quests_info = [
     {"key": "diam_10000", "type": "earned_diamonds", "target": 10000, "name": "💎 Искатель сокровищ V", "desc": "Заработай 10 000 алмазов", "rew_coins": 0, "rew_tap": 0, "rew_diamonds": 500, "rew_chance": 0.003},
 ]
 
+def get_progress_bar(current, total, length=10):
+    percent = current / total
+    if percent > 1: percent = 1
+    filled_length = int(length * percent)
+    # Используем красивые символы ▰ и ▱
+    bar = '▰' * filled_length + '▱' * (length - filled_length)
+    return bar
+
+
 # ═══════════════════════════════════════════════════════════
 # РЕГИСТРАЦИЯ И ХЕЛПЕРЫ
 # ═══════════════════════════════════════════════════════════
@@ -1233,7 +1242,9 @@ async def profile(message: Message):
     
     text = (f"👑 <b>ТВОЙ ПРОФИЛЬ</b> 👑\n\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
-            f"🆙 <b>LVL {user_lvl}</b>\n{xp_bar}\n\n"
+            f"⭐️ <b>LVL:</b> {u.get('lvl', 1)}\n"
+            f"💠 {bar} {current_xp}/{xp_needed}\n"
+            f"⚡️ До следующего уровня: <b>{diff_xp} XP</b>\n"
             f"📅 В игре с: {reg_date}\n"
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
             f"💰 Баланс: {user['balance']:,} монет\n"
