@@ -64,7 +64,7 @@ async def start_render_server():
 # КОНФИГУРАЦИЯ И ДАННЫЕ
 # ═══════════════════════════════════════════════════════════
 
-BASE_DIAMOND_CHANCE = 0.01
+BASE_DIAMOND_CHANCE = 0.001
 ITEMS_PER_PAGE = 10
 NICKNAME_CHANGE_COST = 1000
 NICKNAME_CHANGE_DAYS = 7
