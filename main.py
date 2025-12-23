@@ -1246,7 +1246,7 @@ async def profile(message: Message):
     text = (f"👑 <b>ТВОЙ ПРОФИЛЬ</b> 👑\n\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
             f"⭐️ <b>LVL:</b> {user_lvl}\n"
-            f"💠 {xp_bar} {user_xp}/{next_level_xp}\n"
+            f"💠 {xp_bar} {user_xp}\n"
             f"⚡️ До следующего уровня: <b>{diff_xp} XP</b>\n"
             f"📅 В игре с: {reg_date}\n"
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
