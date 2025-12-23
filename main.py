@@ -343,19 +343,6 @@ async def add_xp(user_id, amount):
                 parse_mode="HTML"
             )
         except: pass
-            
-    if leveled_up:
-        # Сохраняем сразу
-        await database.save_user(user_id, user)
-        try:
-            reward_str = "\n".join(rewards_text)
-            await bot.send_message(
-                user_id,
-                f"🎉 **НОВЫЙ УРОВЕНЬ!**\n\n"
-                f"🆙 Ты достиг **{user['level']} уровня**!\n"
-                f"🎁 Награды:\n{reward_str}"
-            )
-        except: pass
 
 def get_xp_bar(current, target, length=8):
     percent = min(current / target, 1.0)
