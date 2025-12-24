@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 import config
 
 # ID Администраторов теперь берутся из конфига
-ADMIN_IDS = [5342285170]
+ADMIN_IDS = config.ADMIN_IDS
 
 ITEMS_PER_PAGE = 10
 
