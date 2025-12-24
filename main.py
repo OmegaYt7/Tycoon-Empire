@@ -16,7 +16,7 @@ from aiogram.types import (
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Импорты твоих модулей
+# Импорты модулей
 import config
 import database
 import promocodes
@@ -24,6 +24,11 @@ import admin_panel
 
 # Настройка логирования
 logging.basicConfig(level=logging.WARNING)
+
+# Инициализация бота через config
+if not config.BOT_TOKEN:
+    sys.exit("❌ Ошибка: BOT_TOKEN не найден в переменных окружения.")
+
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 users = {}
@@ -40,21 +45,20 @@ async def autosave_loop():
             logging.error(f"Ошибка автосохранения: {e}")
 
 # ═══════════════════════════════════════════════════════════
-# СЕРВЕР ДЛЯ RENDER (ЧТОБЫ БОТ НЕ ВЫКЛЮЧАЛСЯ)
+# СЕРВЕР ДЛЯ HUGGING FACE / RENDER
 # ═══════════════════════════════════════════════════════════
 async def handle_health_check(request):
     return web.Response(text="Bot is running!", status=200)
 
-async def start_render_server():
+async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle_health_check)
     runner = web.AppRunner(app)
     await runner.setup()
     
-    # Render передает порт в переменной окружения PORT
-    port = int(os.environ.get("PORT", 8080)) 
+    # Hugging Face обычно использует порт 7860
+    port = int(os.environ.get("PORT", 7860))
     
-    # Обязательно 0.0.0.0 для внешнего доступа
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     logging.warning(f"🌐 Web server started on port {port}")
@@ -244,14 +248,10 @@ def get_progress_bar(current, total, length=10):
 def recalculate_user_stats(user_id):
     if user_id not in users: return
     user = users[user_id]
-    
-    # Считаем тап с нуля. Деревянный палец = 1, поэтому база 0.
     current_tap = 0
     for info in upgrades_info:
         if user["upgrades"].get(info["key"]) == 1:
             current_tap += info["bonus"]
-            
-    # Добавляем бонусы от квестов
     quest_tap_bonus = 0
     quest_chance_bonus = 0.0
     for q_key in user["completed_quests"]:
@@ -259,21 +259,17 @@ def recalculate_user_stats(user_id):
         if quest:
             quest_tap_bonus += quest.get("rew_tap", 0)
             quest_chance_bonus += quest.get("rew_chance", 0)
-            
     user["tap_mult"] = current_tap + quest_tap_bonus
     user["diamond_chance_bonus"] = quest_chance_bonus
     calculate_passive(user)
 
 def check_daily_reset(user):
     today = date.today().isoformat()
-    # Логика сброса серии
     if user.get("last_daily_done_date"):
         last_done = date.fromisoformat(user["last_daily_done_date"])
         yesterday = date.today() - timedelta(days=1)
-        # Если последнее задание сделано раньше вчерашнего дня, серия прерывается
         if last_done < yesterday:
             user["daily_streak"] = 0
-
     if user["daily_progress"]["date"] != today:
         user["daily_progress"] = {
             "date": today,
@@ -281,7 +277,6 @@ def check_daily_reset(user):
         }
 
 def get_level_exp(level):
-    """Возвращает опыт, нужный для получения следующего уровня"""
     return int(XP_BASE_REQ * (XP_MULTIPLIER ** (level - 1)))
 
 async def add_xp(user_id, amount):
@@ -302,23 +297,20 @@ async def add_xp(user_id, amount):
             user["level"] += 1
             leveled_up = True
             
-            # --- ЛОГИКА КРАСИВЫХ НАГРАД ---
             lvl = user["level"]
             if lvl == 2: coins_reward = 2000
             elif lvl == 3: coins_reward = 5000
             elif lvl == 4: coins_reward = 10000
             elif lvl == 5: coins_reward = 20000
             else:
-                # Масштабируемая награда: уровень^2 * 10 000, округленная до тысяч
-                base_reward = 20000  # Награда за 5-й уровень
-                multiplier = 1.5     # Рост на 50% каждый уровень (можно менять)
+                base_reward = 20000
+                multiplier = 1.5
                 coins_reward = base_reward * (multiplier ** (lvl - 5))
             coins_reward = int(round(coins_reward, -3))
             
             user["balance"] += coins_reward
             rewards_text.append(f"💰 {coins_reward:,} монет".replace(",", " "))
             
-            # --- ЛОГИКА АЛМАЗОВ ---
             diam_bonus = 0
             if lvl % 5 == 0: diam_bonus += 5
             if lvl % 10 == 0: diam_bonus += 10
@@ -331,7 +323,7 @@ async def add_xp(user_id, amount):
             break
             
     if leveled_up:
-        # Сохраняем сразу, чтобы не потерять прогресс
+        # Сохраняем сразу
         await database.save_user(user_id, user)
         try:
             reward_str = "\n".join(rewards_text)
@@ -1233,7 +1225,7 @@ async def profile(message: Message):
     text = (f"👑 <b>ТВОЙ ПРОФИЛЬ</b> 👑\n\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
             f"⭐️ <b>LVL:</b> {user_lvl}\n"
-            f"💠 {xp_bar}\n"
+            f"💠 {xp_bar} {user_xp}/{next_level_xp}\n"
             f"⚡️ До следующего уровня: <b>{diff_xp} XP</b>\n"
             f"📅 В игре с: {reg_date}\n"
             f"🆔 ID: <code>{user['custom_id']}</code>\n"
@@ -1594,57 +1586,60 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # 1. Инициализируем соединение с БД (функция из database.py)
+    # 1. Даем серверу "проснуться" (5 секунд паузы)
+    logging.warning("⏳ Ожидание инициализации сети...")
+    await asyncio.sleep(5)
+
+    # 2. Подключение к БД
     await database.create_pool() 
     
-    # 2. Обработка сигналов остановки для Render
+    # Настройка Graceful Shutdown
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
-
     def signal_handler():
-        logging.warning("🛑 Получен сигнал остановки! Сохраняем данные...")
         stop_event.set()
-
     for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, signal_handler)
-        except NotImplementedError:
-            pass
+        try: loop.add_signal_handler(sig, signal_handler)
+        except NotImplementedError: pass
 
     try:
-        # 3. Загружаем данные
+        # 3. Загрузка пользователей
         loaded_data = await database.load_all_users()
         users.update(loaded_data)
-        
-        # Пересчет статов для всех
         for uid in users:
             recalculate_user_stats(uid)
         
-        # 4. ЗАПУСКАЕМ ВЕБ-СЕРВЕР (Критично для Render!)
-        await start_render_server()
+        # 4. Запуск веб-сервера
+        await start_web_server()
         
-        # 5. Запускаем фоновые задачи
+        # 5. Фоновое сохранение
         save_task = asyncio.create_task(autosave_loop())
         
-        # 6. Запускаем бота
+        # 6. Старт поллинга с ПОВТОРАМИ при ошибке сети
         logging.warning("🚀 Бот запускается...")
-        polling_task = asyncio.create_task(dp.start_polling(bot))
         
-        # Ждем сигнал выключения от Render
+        while True:
+            try:
+                await bot.delete_webhook(drop_pending_updates=True)
+                await dp.start_polling(bot)
+            except Exception as e:
+                logging.error(f"🌐 Ошибка сети Telegram: {e}. Рестарт через 10 сек...")
+                await asyncio.sleep(10)
+                if stop_event.is_set():
+                    break
+        
         await stop_event.wait()
         
-        # 7. Корректное завершение
-        logging.warning("🛑 Останавливаем процессы...")
-        await dp.stop_polling()
-        polling_task.cancel()
-        save_task.cancel()
-        
-        # Финальное сохранение
-        await database.save_all_users(users)
-        
     finally:
+        save_task.cancel()
         await database.close_session()
-        logging.warning("✅ Бот успешно остановлен.")
+        await bot.session.close()
+        
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
 
 if __name__ == "__main__":
     try:
