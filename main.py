@@ -45,7 +45,9 @@ async def autosave_loop():
             logging.error(f"Ошибка автосохранения: {e}")
 
 # ═══════════════════════════════════════════════════════════
-# СЕРВЕР ДЛЯ HUGGING FACE / RENDER
+# СЕРВЕР ДЛЯ PELLA / RENDER (ОБЯЗАТЕЛЬНО!)
+# Этот код нужен, чтобы хостинг не выключил бота.
+# Он не влияет на Neon базу данных.
 # ═══════════════════════════════════════════════════════════
 async def handle_health_check(request):
     return web.Response(text="Bot is running!", status=200)
@@ -56,8 +58,8 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     
-    # Hugging Face обычно использует порт 7860
-    port = int(os.environ.get("PORT", 7860))
+    # Берем порт из переменной окружения Pella, или ставим 8080 по умолчанию
+    port = int(os.environ.get("PORT", 8080))
     
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
@@ -534,9 +536,9 @@ async def show_main_interface(message: Message, user_id: int):
 async def start(message: Message):
     user_id = message.from_user.id
     
+    # ИСПРАВЛЕНИЕ: Убрали вызов database.create_table(), так как это делается при запуске бота
+    
     if user_id not in users:
-        await database.create_table() 
-        
         upgrades = {info["key"]: 0 for info in upgrades_info}
         upgrades["wooden_finger"] = 1
         buildings_levels = {info["key"]: 0 for info in buildings_info}
@@ -1586,11 +1588,12 @@ async def back_top10(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 async def main():
-    # 1. Даем серверу "проснуться" (5 секунд паузы)
+    # 1. Даем серверу "проснуться"
     logging.warning("⏳ Ожидание инициализации сети...")
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
 
-    # 2. Подключение к БД
+    # 2. Подключение к БД и создание таблиц
+    # При вызове create_pool теперь создается и таблица (init_db)
     await database.create_pool() 
     
     # Настройка Graceful Shutdown
@@ -1609,13 +1612,13 @@ async def main():
         for uid in users:
             recalculate_user_stats(uid)
         
-        # 4. Запуск веб-сервера
+        # 4. Запуск веб-сервера (Pella требует это!)
         await start_web_server()
         
         # 5. Фоновое сохранение
         save_task = asyncio.create_task(autosave_loop())
         
-        # 6. Старт поллинга с ПОВТОРАМИ при ошибке сети
+        # 6. Старт поллинга
         logging.warning("🚀 Бот запускается...")
         
         while True:
