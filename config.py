@@ -8,7 +8,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # URL базы данных (Neon)
-DATABASE_URL = 'postgresql://neondb_owner:npg_sC4FRJhbmk8d@ep-billowing-credit-a4q1jnbn-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ID администраторов.
 # В переменных окружения задавать строкой через запятую: 12345,67890
