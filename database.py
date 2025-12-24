@@ -1,6 +1,8 @@
 import asyncpg
 import json
 import logging
+import os
+import sys
 import config
 
 pool = None
@@ -8,8 +10,12 @@ pool = None
 async def create_pool():
     global pool
     if pool is None:
+        # Проверка, установлена ли ссылка на базу
+        if not config.DATABASE_URL:
+            logging.error("❌ ОШИБКА: Не найдена переменная DATABASE_URL! Укажите её в настройках хостинга (Environment Variables).")
+            sys.exit(1) # Останавливаем бота, если базы нет
+            
         try:
-            # Используем URL из конфига.
             # Для Neon обязательно ssl="require"
             pool = await asyncpg.create_pool(
                 dsn=config.DATABASE_URL,
@@ -18,9 +24,11 @@ async def create_pool():
                 max_size=10
             )
             logging.warning("✅ Пул соединений с Neon DB (SSL) создан.")
+            # Создаем таблицу сразу при подключении
             await init_db()
         except Exception as e:
             logging.error(f"❌ Ошибка подключения к БД: {e}")
+            sys.exit(1)
 
 async def close_session():
     global pool
@@ -30,6 +38,8 @@ async def close_session():
 
 async def init_db():
     """Создает таблицу, если она не существует"""
+    if not pool:
+        return
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -41,6 +51,7 @@ async def init_db():
                 last_updated TIMESTAMP DEFAULT NOW()
             );
         """)
+        logging.warning("📊 Таблица users проверена/создана.")
 
 async def save_user(user_id, user_data):
     """Сохраняет одного пользователя (Upsert)"""
