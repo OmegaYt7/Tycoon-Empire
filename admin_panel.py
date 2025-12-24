@@ -2,8 +2,9 @@ import math
 import asyncio
 from datetime import date
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+import config
 
-# ID Администраторов
+# ID Администраторов теперь берутся из конфига
 ADMIN_IDS = [5342285170]
 
 ITEMS_PER_PAGE = 10
