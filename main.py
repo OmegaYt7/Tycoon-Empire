@@ -314,8 +314,10 @@ async def add_xp(user_id, amount):
             rewards_text.append(f"💰 {coins_reward:,} монет".replace(",", " "))
             
             diam_bonus = 0
-            if lvl % 5 == 0: diam_bonus += 5
-            if lvl % 10 == 0: diam_bonus += 10
+            
+            # Если уровень делится на 5 (5, 10, 15, 20...)
+            if lvl % 5 == 0:
+                diam_bonus = lvl  # Награда равна самому уровню (15 ур = 15 алмазов)
             
             if diam_bonus > 0:
                 user["diamonds"] += diam_bonus
