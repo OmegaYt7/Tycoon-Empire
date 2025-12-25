@@ -1297,7 +1297,10 @@ async def view_upgrade(callback: CallbackQuery):
     key = "_".join(data_parts[:-1])
     info = next((x for x in upgrades_info if x["key"] == key), None)
     if not info: return
-    text = (f"✨ **{info['name']}** ✨\n\n💪 Даёт: **+{info['bonus']}** монет за тап\n{info['funny']}\n💸 Цена: **{info['cost']:,}** монет").replace(",", " ")
+    
+    # ИЗМЕНЕНИЕ: добавлено :, к info['bonus'] для пробелов
+    text = (f"✨ **{info['name']}** ✨\n\n💪 Даёт: **+{info['bonus']:,}** монет за тап\n{info['funny']}\n💸 Цена: **{info['cost']:,}** монет").replace(",", " ")
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 КУПИТЬ СЕЙЧАС", callback_data=f"buy_finger_{key}_{page}")],
         [InlineKeyboardButton(text="🔙 Назад в магазин", callback_data=f"shop_page_{page}")]
@@ -1412,10 +1415,15 @@ async def view_building(callback: CallbackQuery):
                 f"🕒 Доход: **+{current_income_fmt}** м/мин\n"
                 f"📦 Накоплено: **{accumulated:,} / {current_capacity:,}**\n"
                 f"{info['funny']}").replace(",", " ")
-        if accumulated >= current_income: kb.inline_keyboard.append([InlineKeyboardButton(text=f"💰 Забрать {accumulated:,}", callback_data=f"claim_building_{key}_{page}")])
         
-        # Кнопка улучшения без текста в скобках
-        kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить | {upgrade_cost:,}", callback_data=f"upgrade_building_{key}_{page}")])
+        if accumulated >= current_income: 
+            kb.inline_keyboard.append([InlineKeyboardButton(text=f"💰 Забрать {accumulated:,}", callback_data=f"claim_building_{key}_{page}")])
+        
+        # ИЗМЕНЕНИЕ: Проверка на 10 уровень
+        if level < 10:
+            kb.inline_keyboard.append([InlineKeyboardButton(text=f"⬆️ Улучшить | {upgrade_cost:,}", callback_data=f"upgrade_building_{key}_{page}")])
+        else:
+            kb.inline_keyboard.append([InlineKeyboardButton(text="✅ Макс. уровень (10)", callback_data="ignore")])
         
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"build_page_{page}")])
     try: await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
@@ -1473,7 +1481,14 @@ async def upgrade_building(callback: CallbackQuery):
     key = "_".join(data_parts[:-1])
     info = next((x for x in buildings_info if x["key"] == key), None)
     if not info: return
+    
     level = user["buildings_levels"][key]
+    
+    # ИЗМЕНЕНИЕ: Защита от превышения уровня
+    if level >= 10:
+        await callback.answer("⛔ Достигнут максимальный уровень!", show_alert=True)
+        return
+
     upgrade_cost = info['upgrade_cost_base'] * level
     if user["balance"] < upgrade_cost:
         await callback.answer("❌ Не хватает монет!", show_alert=True)
