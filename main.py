@@ -279,7 +279,26 @@ def check_daily_reset(user):
         }
 
 def get_level_exp(level):
-    return int(XP_BASE_REQ * (XP_MULTIPLIER ** (level - 1)))
+    # Берем базу 1.4 из твоей переменной в начале файла
+    base_mult = XP_MULTIPLIER 
+    
+    # ЛИНЕЙНЫЙ РОСТ:
+    # Каждый уровень добавляет +0.025 к множителю.
+    # 1 ур = 1.4
+    # 5 ур = 1.5
+    # 7 ур = 1.55
+    # 9 ур = 1.6
+    # 11 ур = 1.65
+    growth = (level - 1) * 0.025
+    
+    current_mult = base_mult + growth
+    
+    # Ограничитель (чтобы сложность не улетела в космос на 100+ уровнях)
+    # Если множитель станет больше 2.5, он остановится на 2.5
+    if current_mult > 2.5: 
+        current_mult = 2.5
+
+    return int(XP_BASE_REQ * (current_mult ** (level - 1)))
 
 async def add_xp(user_id, amount):
     if user_id not in users: return
