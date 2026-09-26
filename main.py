@@ -15,6 +15,8 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 
 # Импорты модулей
 import config
@@ -31,6 +33,10 @@ if not config.BOT_TOKEN:
 
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+class AdminEdit(StatesGroup):
+    """Состояние: админ вводит число для изменения статы игрока (см. admin_panel.py)."""
+    waiting_value = State()
 users = {}
 
 # ═══════════════════════════════════════════════════════════
@@ -547,6 +553,73 @@ async def promo_handler(message: Message):
 
     await message.answer(response_text, parse_mode="HTML")
 
+# ═══════════════════════════════════════════════════════════
+# АДМИН: ПРИЁМ ЧИСЛА ДЛЯ ИЗМЕНЕНИЯ СТАТЫ ИГРОКА
+# Зарегистрирован ДО общего @dp.message(F.text), чтобы перехватывать
+# ввод раньше, пока админ находится в состоянии AdminEdit.waiting_value.
+# ═══════════════════════════════════════════════════════════
+@dp.message(AdminEdit.waiting_value)
+async def admin_edit_receive_value(message: Message, state: FSMContext):
+    if not admin_panel.is_admin(message.from_user.id):
+        return
+
+    raw = (message.text or "").strip().replace(" ", "")
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        await message.answer("⚠️ Нужно целое число (можно отрицательное, например -500). Попробуй ещё раз или нажми «🔙 Отмена» в сообщении выше.")
+        return
+
+    data = await state.get_data()
+    field = data.get("field")
+    target_id = data.get("target_id")
+    page = data.get("page")
+
+    target_user = users.get(target_id)
+    field_info = admin_panel.EDITABLE_FIELDS.get(field)
+
+    if not target_user or not field_info:
+        await message.answer("⚠️ Игрок или стата больше не найдены.")
+        await state.clear()
+        return
+
+    old_value = target_user.get(field, 0)
+
+    if field_info["mode"] == "add":
+        new_value = old_value + value
+    else:
+        new_value = value
+    target_user[field] = new_value
+
+    await database.save_user(target_id, target_user)
+    recalculate_user_stats(target_id)
+    await state.clear()
+
+    old_str = f"{old_value:,}".replace(",", " ")
+    new_str = f"{new_value:,}".replace(",", " ")
+    await message.answer(f"✅ {field_info['label']}: {old_str} → {new_str}")
+
+    # Уведомляем игрока ТОЛЬКО при начислении (баланс/алмазы), не при прямой правке статы
+    if field_info["mode"] == "add" and value != 0:
+        try:
+            verb = "начислено" if value > 0 else "списано"
+            amount_str = f"{abs(value):,}".replace(",", " ")
+            await bot.send_message(
+                target_id,
+                f"🎁 <b>Тебе {verb}:</b> {field_info['label']} — {amount_str}\n"
+                f"Текущее значение: {new_str}",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # Показываем обновлённый профиль
+    passive_income = target_user["passive_per_minute"]
+    finger_name, _ = get_current_finger_info(target_user)
+    profile_text = admin_panel.get_user_profile_text(target_user, target_id, passive_income, finger_name)
+    profile_kb = admin_panel.get_user_profile_kb(target_id, page)
+    await message.answer(profile_text, reply_markup=profile_kb, parse_mode="HTML")
+
 @dp.message(F.text)
 async def handle_text(message: Message):
     user_id = message.from_user.id
@@ -736,9 +809,12 @@ async def admin_pagination(callback: CallbackQuery):
     except: pass
 
 @dp.callback_query(F.data.startswith("admin_view_"))
-async def admin_view_user(callback: CallbackQuery):
+async def admin_view_user(callback: CallbackQuery, state: FSMContext = None):
     user_id = callback.from_user.id
     if not admin_panel.is_admin(user_id): return
+    if state:
+        # Сбрасываем незавершённый ввод статы, если админ вернулся назад через эту кнопку
+        await state.clear()
     parts = callback.data.split("_")
     target_tg_id = int(parts[2])
     page = int(parts[3])
@@ -756,6 +832,42 @@ async def admin_view_user(callback: CallbackQuery):
     kb = admin_panel.get_user_profile_kb(target_tg_id, page)
     
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("admin_editmenu_"))
+async def admin_edit_menu(callback: CallbackQuery, state: FSMContext):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    await state.clear()
+    parts = callback.data.split("_")
+    target_id = int(parts[2])
+    page = int(parts[3])
+
+    if target_id not in users:
+        await callback.answer("Игрок не найден", show_alert=True)
+        return
+
+    kb = admin_panel.get_edit_stats_menu_kb(target_id, page)
+    await callback.message.edit_text("✏️ <b>Какую стату изменить?</b>", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("aeditf|"))
+async def admin_edit_field_prompt(callback: CallbackQuery, state: FSMContext):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    _, field, target_id_str, page_str = callback.data.split("|")
+    target_id = int(target_id_str)
+    page = int(page_str)
+
+    target_user = users.get(target_id)
+    if not target_user or field not in admin_panel.EDITABLE_FIELDS:
+        await callback.answer("Игрок или стата не найдены", show_alert=True)
+        return
+
+    current_value = target_user.get(field, 0)
+    text = admin_panel.get_edit_prompt_text(field, target_id, current_value)
+    kb = admin_panel.get_edit_cancel_kb(target_id, page)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+    await state.set_state(AdminEdit.waiting_value)
+    await state.update_data(field=field, target_id=target_id, page=page)
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("admin_wipe_ask_"))
 async def admin_wipe_ask(callback: CallbackQuery):
@@ -1507,8 +1619,15 @@ async def main():
     # Настройка Graceful Shutdown
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
+    save_task = None
+
     def signal_handler():
         stop_event.set()
+        # ВАЖНО: раньше сигнал только выставлял флаг, но dp.start_polling()
+        # его не проверял и продолжал работать — хостинг "убивал" процесс
+        # без финального сохранения. Теперь явно останавливаем поллинг.
+        asyncio.create_task(dp.stop_polling())
+
     for sig in (signal.SIGTERM, signal.SIGINT):
         try: loop.add_signal_handler(sig, signal_handler)
         except NotImplementedError: pass
@@ -1536,16 +1655,26 @@ async def main():
             try:
                 await bot.delete_webhook(drop_pending_updates=True)
                 await dp.start_polling(bot)
+                # start_polling завершился без ошибки — значит его остановили
+                # через dp.stop_polling() (сигнал завершения), выходим из цикла.
+                break
             except Exception as e:
                 logging.error(f"🌐 Ошибка сети Telegram: {e}. Рестарт через 10 сек...")
                 await asyncio.sleep(10)
                 if stop_event.is_set():
                     break
         
-        await stop_event.wait()
-        
     finally:
-        save_task.cancel()
+        if save_task:
+            save_task.cancel()
+        # Финальное сохранение — гарантия, что при остановке бота (кнопка на
+        # хостинге, редеплой и т.п.) не потеряются данные с момента последнего
+        # автосохранения. В TEST_MODE ничего не запишется, как и задумано.
+        try:
+            logging.warning("💾 Финальное сохранение перед остановкой...")
+            await database.save_all_users(users)
+        except Exception as e:
+            logging.error(f"Ошибка финального сохранения: {e}")
         await database.close_session()
         await bot.session.close()
         
