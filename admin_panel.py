@@ -139,8 +139,50 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
 
 def get_user_profile_kb(target_id, page):
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить статы", callback_data=f"admin_editmenu_{target_id}_{page}")],
         [InlineKeyboardButton(text="🗑 Стереть данные", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
         [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
+    ])
+
+# ═══════════════════════════════════════════════════════════
+# РЕДАКТИРОВАНИЕ СТАТОВ ИГРОКА
+# mode "add"  -> значение ПРИБАВЛЯЕТСЯ к текущему, игрок получает уведомление
+# mode "set"  -> значение просто ЗАМЕНЯЕТ текущее, игрок НЕ уведомляется
+# ═══════════════════════════════════════════════════════════
+EDITABLE_FIELDS = {
+    "balance":      {"label": "💰 Баланс (монеты)", "mode": "add"},
+    "diamonds":     {"label": "💎 Алмазы",           "mode": "add"},
+    "tap_mult":     {"label": "⚡ Сила тапа",        "mode": "set"},
+    "total_spent":  {"label": "💸 Потрачено всего",  "mode": "set"},
+    "referrals":    {"label": "👥 Рефералов",        "mode": "set"},
+    "daily_streak": {"label": "🔥 Серия дней",       "mode": "set"},
+    "total_clicks": {"label": "👆 Всего тапов",      "mode": "set"},
+}
+
+def get_edit_stats_menu_kb(target_id, page):
+    rows = []
+    for field, info in EDITABLE_FIELDS.items():
+        rows.append([InlineKeyboardButton(text=info["label"], callback_data=f"aeditf|{field}|{target_id}|{page}")])
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_view_{target_id}_{page}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def get_edit_prompt_text(field, target_id, current_value):
+    info = EDITABLE_FIELDS[field]
+    current_str = f"{current_value:,}".replace(",", " ")
+    if info["mode"] == "add":
+        action_desc = "будет <b>прибавлено</b> к текущему значению (можно отрицательное число, чтобы отнять)"
+    else:
+        action_desc = "станет <b>новым</b> значением этой статы (перезапишет текущее)"
+    return (
+        f"✏️ <b>Изменение статы:</b> {info['label']}\n"
+        f"Игрок: <code>{target_id}</code>\n"
+        f"Текущее значение: <code>{current_str}</code>\n\n"
+        f"Отправь число сообщением — оно {action_desc}."
+    )
+
+def get_edit_cancel_kb(target_id, page):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"admin_view_{target_id}_{page}")]
     ])
 
 def get_wipe_confirm_text(target_id):
