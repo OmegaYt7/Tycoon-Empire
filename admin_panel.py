@@ -140,8 +140,25 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
 def get_user_profile_kb(target_id, page):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить статы", callback_data=f"admin_editmenu_{target_id}_{page}")],
-        [InlineKeyboardButton(text="🗑 Стереть данные", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
+        [InlineKeyboardButton(text="🗑 Стереть данные (обнулить)", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
+        [InlineKeyboardButton(text="❌ Удалить игрока навсегда", callback_data=f"admin_delete_ask_{target_id}_{page}")],
         [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
+    ])
+
+def get_delete_confirm_text(target_id):
+    return (
+        f"☠️ **УДАЛИТЬ ИГРОКА ПОЛНОСТЬЮ?** ☠️\n\n"
+        f"В отличие от «Стереть данные», это удалит игрока `{target_id}` "
+        f"из базы данных ЦЕЛИКОМ — включая ник, Game ID и дату регистрации.\n\n"
+        f"Если он напишет боту снова — для него это будет как новая регистрация "
+        f"с нуля (новый Game ID и т.п.).\n\n"
+        f"Это действие **НЕОБРАТИМО**."
+    )
+
+def get_delete_confirm_kb(target_id, page):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="☠️ ДА, УДАЛИТЬ НАВСЕГДА", callback_data=f"admin_delete_confirm_{target_id}_{page}")],
+        [InlineKeyboardButton(text="🔙 НЕТ, ОТМЕНА", callback_data=f"admin_view_{target_id}_{page}")]
     ])
 
 # ═══════════════════════════════════════════════════════════
