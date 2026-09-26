@@ -214,6 +214,25 @@ async def load_all_users():
     return loaded_users
 
 
+async def delete_user(user_id):
+    """Полностью удаляет пользователя из базы (не обнуление, а именно удаление строки).
+    В TEST_MODE удаление тоже пропускается, чтобы не портить реальные данные во время тестов."""
+    if config.TEST_MODE:
+        logging.warning(f"🧪 TEST_MODE: удаление user_id={user_id} пропущено (в БД не применено).")
+        return True
+
+    async def _do():
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM users WHERE user_id = $1;", user_id)
+
+    try:
+        await _with_retry(_do)
+        return True
+    except Exception as e:
+        logging.error(f"Delete User Error {user_id}: {e}")
+        return False
+
+
 async def export_users_to_json_file():
     """Экспорт для админки"""
     filename = "users_export.json"
