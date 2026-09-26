@@ -17,6 +17,7 @@ from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramForbiddenError
 
 # Импорты модулей
 import config
@@ -341,6 +342,19 @@ def calculate_passive(user):
             passive += income_val
     user["passive_per_minute"] = passive
 
+def get_server_tz_label():
+    """Возвращает смещение часового пояса сервера, например 'UTC+00:00'.
+    Ежедневный сброс заданий происходит в полночь ИМЕННО по этому времени —
+    у игроков в разных часовых поясах локальная полночь будет отличаться,
+    поэтому важно показывать это явно, а не просто "00:00"."""
+    offset = datetime.now().astimezone().strftime('%z')  # напр. '+0000' или '+0300'
+    if not offset:
+        return "UTC"
+    sign = offset[0]
+    hours = offset[1:3]
+    minutes = offset[3:5]
+    return f"UTC{sign}{hours}:{minutes}"
+
 def get_progress_bar(current, target, length=10):
     percent = min(current / target, 1.0)
     filled_length = int(length * percent)
@@ -370,7 +384,6 @@ async def check_quest_notifications(message: Message, user_id: int):
         elif quest["type"] == "earned_diamonds": current_val = user["total_diamonds_earned"]
         
         if current_val >= target:
-            user["notified_quests"].append(key)
             try:
                 await bot.send_message(
                     user_id, 
@@ -378,8 +391,16 @@ async def check_quest_notifications(message: Message, user_id: int):
                     f"✅ {quest['name']}\n"
                     f"Зайди в 📝 Задания, чтобы забрать награду!"
                 )
-            except:
-                pass
+                user["notified_quests"].append(key)
+            except TelegramForbiddenError:
+                # Игрок заблокировал бота — уведомлять некого, помечаем,
+                # чтобы не пытаться снова на каждом действии.
+                user["notified_quests"].append(key)
+            except Exception as e:
+                # Временная ошибка (сеть, rate limit и т.п.) — НЕ помечаем
+                # уведомление отправленным, чтобы попробовать снова при
+                # следующем действии игрока вместо потери уведомления навсегда.
+                logging.warning(f"Не удалось отправить уведомление о задании {key} игроку {user_id}: {e}")
 
 async def check_daily_notifications(user_id: int):
     user = users[user_id]
@@ -397,7 +418,6 @@ async def check_daily_notifications(user_id: int):
         elif key == "daily_claim": current = user["daily_progress"]["claims"]
         
         if current >= quest["target"]:
-            user["daily_progress"]["notified"].append(key)
             try:
                 await bot.send_message(
                     user_id,
@@ -405,8 +425,11 @@ async def check_daily_notifications(user_id: int):
                     f"✅ {quest['name']}\n"
                     f"Забери награду в разделе 📅 Ежедневные задания!"
                 )
-            except:
-                pass
+                user["daily_progress"]["notified"].append(key)
+            except TelegramForbiddenError:
+                user["daily_progress"]["notified"].append(key)
+            except Exception as e:
+                logging.warning(f"Не удалось отправить уведомление о ежедневном задании {key} игроку {user_id}: {e}")
 
 async def show_main_interface(message: Message, user_id: int):
     user = users[user_id]
@@ -905,6 +928,50 @@ async def admin_wipe_confirm(callback: CallbackQuery):
     new_callback = callback.model_copy(update={'data': new_data})
     await admin_view_user(new_callback)
 
+@dp.callback_query(F.data.startswith("admin_delete_ask_"))
+async def admin_delete_ask(callback: CallbackQuery):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    parts = callback.data.split("_")
+    target_id = int(parts[3])
+    page = int(parts[4])
+
+    if target_id not in users:
+        await callback.answer("Игрок не найден", show_alert=True)
+        return
+
+    text = admin_panel.get_delete_confirm_text(target_id)
+    kb = admin_panel.get_delete_confirm_kb(target_id, page)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("admin_delete_confirm_"))
+async def admin_delete_confirm(callback: CallbackQuery):
+    if not admin_panel.is_admin(callback.from_user.id): return
+    parts = callback.data.split("_")
+    target_id = int(parts[3])
+    page = int(parts[4])
+
+    if target_id not in users:
+        await callback.answer("Игрок не найден", show_alert=True)
+        return
+
+    # Удаляем из памяти и из базы данных
+    del users[target_id]
+    db_ok = await database.delete_user(target_id)
+
+    if db_ok:
+        await callback.answer("☠️ Игрок удалён навсегда (из бота и из базы).", show_alert=True)
+    else:
+        await callback.answer("⚠️ Удалено из бота, но при удалении из базы данных произошла ошибка. Проверь логи.", show_alert=True)
+
+    # Возвращаемся к списку игроков, т.к. открывать удалённый профиль уже нельзя.
+    # (не используем admin_pagination напрямую, т.к. она только меняет клавиатуру,
+    # а тут ещё нужно вернуть текст со "Список игроков" вместо текста подтверждения)
+    kb = admin_panel.get_users_keyboard(users, page=page)
+    try:
+        await callback.message.edit_text("👥 **Список игроков:**", reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+
 # ═══════════════════════════════════════════════════════════
 # НАСТРОЙКИ
 # ═══════════════════════════════════════════════════════════
@@ -1044,7 +1111,11 @@ async def quests_daily(callback: CallbackQuery):
         hours, remainder = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         time_left = f"{hours:02}:{minutes:02}:{seconds:02}"
-        await callback.answer(f"✅ Всё выполнено!\nОбновление через: {time_left}", show_alert=True)
+        tz_label = get_server_tz_label()
+        await callback.answer(
+            f"✅ Всё выполнено!\nОбновление через: {time_left}\n🕒 Сброс в 00:00 ({tz_label})",
+            show_alert=True
+        )
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[])
     for q in DAILY_QUESTS_CONFIG:
@@ -1054,7 +1125,8 @@ async def quests_daily(callback: CallbackQuery):
         kb.inline_keyboard.append([InlineKeyboardButton(text=name_text, callback_data=f"view_daily_{key}")])
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="quests_back_root")])
     streak_fmt = f"{user['daily_streak']:,}".replace(",", " ")
-    text = (f"📅 **Ежедневные задания**\n🔥 Серия: **{streak_fmt} дн.**\nСброс в 00:00")
+    tz_label = get_server_tz_label()
+    text = (f"📅 **Ежедневные задания**\n🔥 Серия: **{streak_fmt} дн.**\n🕒 Сброс в 00:00 ({tz_label}) — время сервера")
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("view_daily_"))
@@ -1342,7 +1414,11 @@ async def buy_upgrade(callback: CallbackQuery):
     await database.save_user(user_id, user)
     
     await callback.answer(f"🎉 Ты купил {info['name']}! (+{xp_amount} XP)", show_alert=True)
+    # Проверяем ОБА типа заданий сразу (не только основные) — раньше это было
+    # пропущено, и уведомление о выполненном задании приходило с задержкой
+    # (только на следующем действии, например следующем тапе).
     await check_quest_notifications(callback.message, user_id)
+    await check_daily_notifications(user_id)
     try: await callback.message.delete()
     except: pass
     await shop(callback.message, page)
@@ -1467,6 +1543,7 @@ async def buy_building(callback: CallbackQuery):
     
     await callback.answer(f"🎉 Построено: {info['name']}! (+{xp_amount} XP)", show_alert=True)
     await check_quest_notifications(callback.message, user_id)
+    await check_daily_notifications(user_id)
     new_data = f"view_building_{key}_{page}"
     new_callback = callback.model_copy(update={'data': new_data})
     await view_building(new_callback)
@@ -1512,6 +1589,11 @@ async def upgrade_building(callback: CallbackQuery):
     await database.save_user(user_id, user)
     
     await callback.answer(f"🎉 Улучшено! (+{xp_amount} XP)", show_alert=True)
+    # ВАЖНО: улучшение здания может увеличить пассивный доход или общую сумму
+    # трат за один клик — а это как раз условия основных заданий типа "income"
+    # и "spent". Раньше здесь проверялись только ежедневные задания, поэтому
+    # такие основные задания "зависали" до следующего тапа.
+    await check_quest_notifications(callback.message, user_id)
     await check_daily_notifications(user_id)
     new_data = f"view_building_{key}_{page}"
     new_callback = callback.model_copy(update={'data': new_data})
@@ -1541,6 +1623,9 @@ async def claim_building(callback: CallbackQuery):
         await database.save_user(user_id, user)
 
     await callback.answer(f"🎉 Забрано {accumulated:,} монет!", show_alert=True)
+    # Сбор дохода меняет баланс — а "balance"-задания проверяются в
+    # check_quest_notifications, не в check_daily_notifications.
+    await check_quest_notifications(callback.message, user_id)
     await check_daily_notifications(user_id)
     new_data = f"view_building_{key}_{page}"
     new_callback = callback.model_copy(update={'data': new_data})
