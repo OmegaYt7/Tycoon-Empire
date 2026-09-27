@@ -730,6 +730,9 @@ async def handle_text(message: Message):
     elif message.text == "💾 Выгрузка":
         if admin_panel.is_admin(user_id):
             await message.answer("⚠️ **Выгрузка базы данных**\n\nСкачать файл данных?", reply_markup=admin_panel.export_confirm_kb(), parse_mode="Markdown")
+    elif message.text == "⭐ Статистика Stars":
+        if admin_panel.is_admin(user_id):
+            await market.show_stars_stats(message, bot)
     else:
         try:
             await message.react([ReactionTypeEmoji(emoji="🤔")])
