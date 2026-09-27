@@ -25,6 +25,7 @@ import database
 import promocodes
 import admin_panel
 import market
+import daily_login
 
 # Настройка логирования
 logging.basicConfig(level=logging.WARNING)
@@ -276,7 +277,7 @@ def main_menu():
         [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🏪 Магазин")],
         [KeyboardButton(text="🏗️ Сооружения"), KeyboardButton(text="📝 Задания")],
         [KeyboardButton(text="🏆 Топ-10"), KeyboardButton(text="⚙️ Настройки")],
-        [KeyboardButton(text="💎 Рынок")],
+        [KeyboardButton(text="💎 Рынок"), KeyboardButton(text="🎁 Ежедневная награда")],
         [KeyboardButton(text="💰 Тапать монеты")]
     ], resize_keyboard=True, one_time_keyboard=False)
 
@@ -483,6 +484,8 @@ async def start(message: Message):
             "diamonds": 0,
             "total_diamonds_earned": 0,
             "donations": [],  # история реальных покупок (Stars/СБП) - см. market.py
+            "login_streak": 0,
+            "last_login_reward_date": None,  # см. daily_login.py
             "diamond_chance_bonus": 0.0,
             "tap_mult": 1,
             "passive_per_minute": 0,
@@ -707,6 +710,7 @@ async def handle_text(message: Message):
     if message.text == "💰 Тапать монеты": await show_tap(message)
     elif message.text == "📊 Профиль": await profile(message)
     elif message.text == "🏪 Магазин": await shop(message)
+    elif message.text == "🎁 Ежедневная награда": await daily_login.daily_menu(message)
     elif message.text == "💎 Рынок": await market.market_menu(message)
     elif message.text == "💎 Алмазы": await market.diamonds_menu(message)
     elif message.text == "🎁 Бонусы": await market.coming_soon(message)
@@ -1721,6 +1725,10 @@ async def main():
     # словарю users и к функции проверки заданий, регистрируем его роутер.
     market.setup(users, check_quest_notifications)
     dp.include_router(market.router)
+
+    # 2.6. Подключаем модуль "Ежедневная награда" (daily_login.py)
+    daily_login.setup(users, recalculate_user_stats)
+    dp.include_router(daily_login.router)
     
     # Настройка Graceful Shutdown
     loop = asyncio.get_running_loop()
