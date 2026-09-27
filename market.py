@@ -112,12 +112,12 @@ def get_diamonds_text(mode="stars"):
         return (
             "💎 **Покупка алмазов**\n"
             "⭐ Раздел: **Telegram Stars**\n\n"
-            "Чем больше пакет - тем дешевле 1 алмаз!"
+            "Чем больше пакет - тем дешевле"
         )
     return (
         "💎 **Покупка алмазов**\n"
         "💳 Раздел: **СБП/карта**\n\n"
-        "Чем больше пакет - тем дешевле 1 алмаз!"
+        "Чем больше пакет - тем дешевле"
     )
 
 
@@ -187,6 +187,76 @@ async def market_pay_rub(callback: CallbackQuery, bot: Bot):
         currency="RUB",
         prices=[LabeledPrice(label=f"{diamonds_str} алмазов", amount=pkg["rub_price"] * 100)],  # рубли в копейках
     )
+
+
+async def show_stars_stats(message: Message, bot: Bot):
+    """Показывает статистику по звёздам: текущий баланс бота (то, что ещё
+    не выведено) и сводку по транзакциям (сколько всего заработано, сколько
+    покупок, последние платежи). Используются нативные методы Bot API -
+    никакой отдельной базы для этого вести не нужно, Telegram сам всё хранит."""
+    try:
+        balance = await bot.get_my_star_balance()
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось получить баланс звёзд: {e}")
+        return
+
+    try:
+        # Bot API отдаёт максимум 100 транзакций за раз - для полной точности
+        # на больших объёмах нужна пагинация через offset, но для старта
+        # достаточно и одной пачки последних записей.
+        result = await bot.get_star_transactions(limit=100)
+        transactions = result.transactions
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось получить историю транзакций: {e}")
+        return
+
+    total_earned = 0
+    purchase_count = 0
+    refund_count = 0
+    refund_amount = 0
+    recent_lines = []
+
+    for tx in transactions:
+        # amount у Telegram ВСЕГДА положительный - направление платежа
+        # определяется тем, какое из полей заполнено: source (входящая,
+        # кто-то заплатил боту) или receiver (исходящая, например возврат
+        # или вывод через Fragment), а не знаком числа.
+        if tx.source is not None:
+            total_earned += tx.amount
+            purchase_count += 1
+            user_label = "неизвестный пользователь"
+            if getattr(tx.source, "user", None):
+                u = tx.source.user
+                user_label = f"@{u.username}" if u.username else f"ID {u.id}"
+            if len(recent_lines) < 10:
+                recent_lines.append(f"  +{tx.amount}⭐ - {user_label}")
+        elif tx.receiver is not None:
+            refund_count += 1
+            refund_amount += tx.amount
+
+    balance_str = f"{balance.amount:,}".replace(",", " ")
+    earned_str = f"{total_earned:,}".replace(",", " ")
+
+    text = (
+        f"⭐ **Статистика Telegram Stars**\n\n"
+        f"💰 Текущий баланс бота: **{balance_str} ⭐**\n"
+        f"(ещё не выведено через Fragment)\n\n"
+        f"📊 За последние {len(transactions)} транзакций:\n"
+        f"✅ Покупок: **{purchase_count}** на сумму **{earned_str} ⭐**\n"
+    )
+    if refund_count:
+        # Сюда попадают и возвраты игрокам, и выводы через Fragment -
+        # Bot API не разделяет их отдельным полем, только по получателю
+        refund_str = f"{refund_amount:,}".replace(",", " ")
+        text += f"↩️ Исходящих операций (возвраты/вывод): **{refund_count}** на сумму **{refund_str} ⭐**\n"
+
+    if recent_lines:
+        text += "\n🕐 Последние покупки:\n" + "\n".join(recent_lines)
+
+    if len(transactions) == 100:
+        text += "\n\n_Показаны последние 100 транзакций - для полной истории нужна пагинация._"
+
+    await message.answer(text, parse_mode="Markdown")
 
 
 @router.pre_checkout_query()
