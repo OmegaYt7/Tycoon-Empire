@@ -2,7 +2,7 @@
 game_data.py
 Статические игровые данные, вынесенные из main.py, чтобы не раздувать
 главный файл: константы баланса, улучшения, здания, квесты и т.п.
-Ничего исполняемого/логики здесь нет — только конфигурация.
+Ничего исполняемого/логики здесь нет - только конфигурация.
 """
 
 BASE_DIAMOND_CHANCE = 0.001
@@ -78,7 +78,7 @@ upgrades_info = [
     {"key": "paradox_finger", "name": "🌀 Парадоксальный Палец", "bonus": 10000000000, "cost": 20000000000000, "funny": "Он тапает и не тапает одновременно. Прибыль максимальна."},
     {"key": "divine_spark", "name": "🔥 Божественная Искра", "bonus": 20000000000, "cost": 50000000000000, "funny": "Искорка, способная зажечь финансовую вселенную."},
     {"key": "omnipower", "name": "🌟 Всемогущество", "bonus": 50000000000, "cost": 100000000000000, "funny": "Твой таповый потенциал безграничен."},
-    {"key": "world_heart", "name": "❤️ Сердце Мира", "bonus": 100000000000, "cost": 200000000000000, "funny": "Каждое биение сердца — это твоя новая монета."}
+    {"key": "world_heart", "name": "❤️ Сердце Мира", "bonus": 100000000000, "cost": 200000000000000, "funny": "Каждое биение сердца - это твоя новая монета."}
 ]
 
 # --- СПИСОК СООРУЖЕНИЙ ---
@@ -102,11 +102,11 @@ buildings_info = [
     {"key": "corporation", "name": "🌆 Корпорация", "base_income": 75000, "upgrade_income_bonus": 25000, "base_capacity": 15000000, "cost": 200000000, "upgrade_cost_base": 50000000, "upgrade_capacity_bonus": 5000000, "funny": "Мировое господство."},
     {"key": "spaceport", "name": "🚀 Космодром", "base_income": 100000, "upgrade_income_bonus": 40000, "base_capacity": 20000000, "cost": 400000000, "upgrade_cost_base": 100000000, "upgrade_capacity_bonus": 8000000, "funny": "Туристы на Марс, деньги тебе."},
     {"key": "tech_hub", "name": "💻 Тех-Хаб", "base_income": 250000, "upgrade_income_bonus": 85000, "base_capacity": 50000000, "cost": 700000000, "upgrade_cost_base": 200000000, "upgrade_capacity_bonus": 17000000, "funny": "Кремниевая долина нервно курит."},
-    {"key": "empire", "name": "🏰 Империя", "base_income": 500000, "upgrade_income_bonus": 250000, "base_capacity": 100000000, "cost": 1500000000, "upgrade_cost_base": 500000000, "upgrade_capacity_bonus": 50000000, "funny": "Ты — король мира."},
+    {"key": "empire", "name": "🏰 Империя", "base_income": 500000, "upgrade_income_bonus": 250000, "base_capacity": 100000000, "cost": 1500000000, "upgrade_cost_base": 500000000, "upgrade_capacity_bonus": 50000000, "funny": "Ты - король мира."},
     {"key": "dyson_sphere", "name": "☀️ Сфера Дайсона", "base_income": 1000000, "upgrade_income_bonus": 400000, "base_capacity": 200000000, "cost": 3000000000, "upgrade_cost_base": 1000000000, "upgrade_capacity_bonus": 80000000, "funny": "Энергия целой звезды в кармане."},
     
     {"key": "electronic_judge", "name": "⚖️ Электронный Судья", "base_income": 5000000, "upgrade_income_bonus": 1000000, "base_capacity": 1000000000, "cost": 5000000000, "upgrade_cost_base": 2000000000, "upgrade_capacity_bonus": 200000000, "funny": "Искусственный интеллект, который решает, кто прав, а кто богат."},
-    {"key": "data_farm", "name": "💾 Ферма данных", "base_income": 25000000, "upgrade_income_bonus": 5000000, "base_capacity": 5000000000, "cost": 20000000000, "upgrade_cost_base": 5000000000, "upgrade_capacity_bonus": 1000000000, "funny": "Самый дорогой товар в мире — информация, и она вся твоя."},
+    {"key": "data_farm", "name": "💾 Ферма данных", "base_income": 25000000, "upgrade_income_bonus": 5000000, "base_capacity": 5000000000, "cost": 20000000000, "upgrade_cost_base": 5000000000, "upgrade_capacity_bonus": 1000000000, "funny": "Самый дорогой товар в мире - информация, и она вся твоя."},
     {"key": "stock_exchange", "name": "📈 Фондовая Биржа", "base_income": 50000000, "upgrade_income_bonus": 23000000, "base_capacity": 10000000000, "cost": 100000000000, "upgrade_cost_base": 25000000000, "upgrade_capacity_bonus": 4600000000, "funny": "Когда ты чихаешь, мировой рынок падает."},
     {"key": "ocean_tunnel", "name": "🚇 Тоннель под Океаном", "base_income": 100000000, "upgrade_income_bonus": 35000000, "base_capacity": 20000000000, "cost": 200000000000, "upgrade_cost_base": 50000000000, "upgrade_capacity_bonus": 7000000000, "funny": "Зачем летать, если можно проехать? Самый длинный платный проезд."},
     {"key": "cloud_storage", "name": "☁️ Облачное Хранилище", "base_income": 300000000, "upgrade_income_bonus": 80000000, "base_capacity": 60000000000, "cost": 500000000000, "upgrade_cost_base": 100000000000, "upgrade_capacity_bonus": 16000000000, "funny": "Хранишь все мемы планеты и зарабатываешь на этом."},
@@ -167,4 +167,18 @@ main_quests_info = [
     {"key": "diam_1000", "type": "earned_diamonds", "target": 1000, "name": "💎 Искатель сокровищ III", "desc": "Заработай 1 000 алмазов", "rew_coins": 0, "rew_tap": 0, "rew_diamonds": 50, "rew_chance": 0.002},
     {"key": "diam_5000", "type": "earned_diamonds", "target": 5000, "name": "💎 Искатель сокровищ IV", "desc": "Заработай 5 000 алмазов", "rew_coins": 0, "rew_tap": 0, "rew_diamonds": 100, "rew_chance": 0.002},
     {"key": "diam_10000", "type": "earned_diamonds", "target": 10000, "name": "💎 Искатель сокровищ V", "desc": "Заработай 10 000 алмазов", "rew_coins": 0, "rew_tap": 0, "rew_diamonds": 500, "rew_chance": 0.003},
+]
+
+# ═══════════════════════════════════════════════════════════
+# РЫНОК: пакеты алмазов за реальные деньги
+# stars_price - цена в Telegram Stars (целое число, без копеек/минорных единиц)
+# rub_price   - цена в рублях для оплаты через СБП/карту (тоже целое число рублей)
+# Цены ориентировочные - поправь под себя в любой момент, это не сложно.
+# ═══════════════════════════════════════════════════════════
+DIAMOND_PACKAGES = [
+    {"key": "d10",   "diamonds": 10,   "stars_price": 15,   "rub_price": 19},
+    {"key": "d50",   "diamonds": 50,   "stars_price": 65,   "rub_price": 79},
+    {"key": "d100",  "diamonds": 100,  "stars_price": 120,  "rub_price": 149},
+    {"key": "d500",  "diamonds": 500,  "stars_price": 550,  "rub_price": 699},
+    {"key": "d1000", "diamonds": 1000, "stars_price": 1000, "rub_price": 1299},
 ]
