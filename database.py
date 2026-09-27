@@ -23,7 +23,7 @@ _CONNECTION_ERRORS = (
 
 
 async def create_pool(force=False):
-    """Создаёт пул соединений. Если force=True — пересоздаёт даже если пул уже есть
+    """Создаёт пул соединений. Если force=True - пересоздаёт даже если пул уже есть
     (используется при восстановлении после обрыва связи)."""
     global pool
     async with _pool_lock:
@@ -55,7 +55,7 @@ async def create_pool(force=False):
         except Exception as e:
             logging.error(f"❌ Ошибка подключения к БД: {e}")
             if not force:
-                # При самом первом запуске без базы — нет смысла жить дальше
+                # При самом первом запуске без базы - нет смысла жить дальше
                 sys.exit(1)
             pool = None
             raise
@@ -83,7 +83,7 @@ async def _with_retry(action, *, retries=2, base_delay=1.0):
                 pass
             await asyncio.sleep(base_delay * (attempt + 1))
         except Exception as e:
-            # Ошибка не связана с соединением (например, синтаксис SQL) — повторять бессмысленно
+            # Ошибка не связана с соединением (например, синтаксис SQL) - повторять бессмысленно
             last_exc = e
             break
     raise last_exc
