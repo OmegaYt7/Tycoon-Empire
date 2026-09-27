@@ -254,6 +254,8 @@ async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
         "diamonds": 0,
         "total_diamonds_earned": 0,
         "donations": saved_donations,
+        "login_streak": 0,
+        "last_login_reward_date": None,
         "diamond_chance_bonus": 0.0,
         "tap_mult": 1,
         "passive_per_minute": 0,
