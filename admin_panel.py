@@ -141,6 +141,7 @@ def get_user_profile_text(user_data, tg_id, passive_income, finger_name):
 def get_user_profile_kb(target_id, page):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить статы", callback_data=f"admin_editmenu_{target_id}_{page}")],
+        [InlineKeyboardButton(text="📊 Статы донатов", callback_data=f"market_userdon_{target_id}_{page}_0")],
         [InlineKeyboardButton(text="🗑 Стереть данные (обнулить)", callback_data=f"admin_wipe_ask_{target_id}_{page}")],
         [InlineKeyboardButton(text="❌ Удалить игрока навсегда", callback_data=f"admin_delete_ask_{target_id}_{page}")],
         [InlineKeyboardButton(text="🔙 Вернуться в список", callback_data=f"admin_page_{page}")]
@@ -231,6 +232,7 @@ async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
     saved_custom_id = u.get("custom_id")
     saved_reg_date = u.get("registration_date")
     saved_username = u.get("username")
+    saved_donations = u.get("donations", [])  # финансовую историю не стираем даже при обнулении статов
     
     upgrades = {key: 0 for key in upgrade_keys}
     upgrades["wooden_finger"] = 1
@@ -251,6 +253,7 @@ async def perform_user_wipe(users_dict, target_id, upgrade_keys, building_keys):
         "balance": 0, 
         "diamonds": 0,
         "total_diamonds_earned": 0,
+        "donations": saved_donations,
         "diamond_chance_bonus": 0.0,
         "tap_mult": 1,
         "passive_per_minute": 0,
