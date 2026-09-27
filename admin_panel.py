@@ -42,7 +42,8 @@ async def notify_new_player(bot, user_data):
 def admin_main_menu():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="👥 Список игроков"), KeyboardButton(text="📢 Оповещение")],
-        [KeyboardButton(text="💾 Выгрузка"), KeyboardButton(text="🔙 Назад")]
+        [KeyboardButton(text="⭐ Статистика Stars"), KeyboardButton(text="💾 Выгрузка")],
+        [KeyboardButton(text="🔙 Назад")]
     ], resize_keyboard=True, one_time_keyboard=False)
 
 def export_confirm_kb():
