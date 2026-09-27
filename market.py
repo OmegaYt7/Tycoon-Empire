@@ -77,53 +77,64 @@ async def coming_soon(message: Message):
 # Каждая кнопка сразу запускает покупку конкретного пакета этим способом
 # оплаты (без промежуточного шага "выбери способ оплаты").
 # ═══════════════════════════════════════════════════════════
-def get_diamonds_kb():
+def get_diamonds_kb(mode="stars"):
+    """mode: 'stars' или 'rub' - какой раздел оплаты сейчас показан.
+    Кнопка внизу переключает раздел прямо в этом же сообщении (edit_text),
+    без отправки нового - как вкладки."""
     rows = []
-
-    # --- Раздел 1: оплата Telegram Stars (работает всегда) ---
-    stars_row = []
+    row = []
     for pkg in DIAMOND_PACKAGES:
         diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
-        label = f"💎{diamonds_str} - {pkg['stars_price']}⭐"
-        stars_row.append(InlineKeyboardButton(text=label, callback_data=f"market_buy_stars_{pkg['key']}"))
-        if len(stars_row) == 2:
-            rows.append(stars_row)
-            stars_row = []
-    if stars_row:
-        rows.append(stars_row)
+        if mode == "stars":
+            label = f"💎{diamonds_str} - {pkg['stars_price']}⭐"
+            cb = f"market_buy_stars_{pkg['key']}"
+        else:
+            label = f"💎{diamonds_str} - {pkg['rub_price']}₽"
+            cb = f"market_buy_rub_{pkg['key']}"
+        row.append(InlineKeyboardButton(text=label, callback_data=cb))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
 
-    # Разделитель между секциями (не кликабельный по смыслу, просто заголовок)
-    rows.append([InlineKeyboardButton(text="💳 - - - ОПЛАТА СБП/КАРТОЙ - - - 💳", callback_data="market_noop")])
-
-    # --- Раздел 2: оплата СБП/картой ---
-    rub_row = []
-    for pkg in DIAMOND_PACKAGES:
-        diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
-        label = f"💎{diamonds_str} - {pkg['rub_price']}₽"
-        rub_row.append(InlineKeyboardButton(text=label, callback_data=f"market_buy_rub_{pkg['key']}"))
-        if len(rub_row) == 2:
-            rows.append(rub_row)
-            rub_row = []
-    if rub_row:
-        rows.append(rub_row)
+    # Кнопка-переключатель раздела
+    if mode == "stars":
+        rows.append([InlineKeyboardButton(text="💳 Переключить на СБП/карту ➡️", callback_data="market_switch_rub")])
+    else:
+        rows.append([InlineKeyboardButton(text="⬅️ Переключить на Stars ⭐", callback_data="market_switch_stars")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def diamonds_menu(message: Message):
-    """Вызывается из main.py по кнопке '💎 Алмазы' в подменю рынка."""
-    text = (
-        "💎 **Покупка алмазов**\n\n"
-        "⭐ Сверху - оплата Telegram Stars (работает сразу)\n"
-        "💳 Снизу - оплата СБП/картой\n\n"
+def get_diamonds_text(mode="stars"):
+    if mode == "stars":
+        return (
+            "💎 **Покупка алмазов**\n"
+            "⭐ Раздел: **Telegram Stars**\n\n"
+            "Чем больше пакет - тем дешевле 1 алмаз!"
+        )
+    return (
+        "💎 **Покупка алмазов**\n"
+        "💳 Раздел: **СБП/карта**\n\n"
         "Чем больше пакет - тем дешевле 1 алмаз!"
     )
-    await message.answer(text, reply_markup=get_diamonds_kb(), parse_mode="Markdown")
 
 
-@router.callback_query(F.data == "market_noop")
-async def market_noop(callback: CallbackQuery):
-    # Кнопка-разделитель, ничего не делает, просто гасим "часики" на кнопке
+async def diamonds_menu(message: Message):
+    """Вызывается из main.py по кнопке '💎 Алмазы' в подменю рынка."""
+    await message.answer(get_diamonds_text("stars"), reply_markup=get_diamonds_kb("stars"), parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "market_switch_rub")
+async def market_switch_rub(callback: CallbackQuery):
+    await callback.message.edit_text(get_diamonds_text("rub"), reply_markup=get_diamonds_kb("rub"), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "market_switch_stars")
+async def market_switch_stars(callback: CallbackQuery):
+    await callback.message.edit_text(get_diamonds_text("stars"), reply_markup=get_diamonds_kb("stars"), parse_mode="Markdown")
     await callback.answer()
 
 
