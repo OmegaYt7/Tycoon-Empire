@@ -20,7 +20,7 @@ import logging
 from aiogram import Router, F, Bot
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery
+    ReplyKeyboardMarkup, KeyboardButton, LabeledPrice, PreCheckoutQuery
 )
 
 import config
@@ -43,76 +43,93 @@ def setup(users_dict, check_quest_notifications=None):
 
 
 # ═══════════════════════════════════════════════════════════
-# КЛАВИАТУРЫ / ТЕКСТЫ
+# НИЖНЕЕ МЕНЮ РЫНКА (открывается по кнопке "💎 Рынок" из главного меню)
+# Разделы "Бонусы" и "Маски" - заглушки на будущее, пока пишут "Скоро".
+# Кнопка "🔙 Назад" не требует отдельного хендлера здесь - в main.py уже
+# есть общий обработчик этого текста, который возвращает в главное меню.
 # ═══════════════════════════════════════════════════════════
-def get_market_kb():
-    kb = InlineKeyboardMarkup(inline_keyboard=[])
-    for pkg in DIAMOND_PACKAGES:
-        diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
-        label = f"💎 {diamonds_str}  -  от {pkg['stars_price']}⭐"
-        kb.inline_keyboard.append([InlineKeyboardButton(text=label, callback_data=f"market_pkg_{pkg['key']}")])
-    kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="market_close")])
-    return kb
+def get_market_menu_kb():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="💎 Алмазы")],
+        [KeyboardButton(text="🎁 Бонусы"), KeyboardButton(text="🎭 Маски")],
+        [KeyboardButton(text="🔙 Назад")]
+    ], resize_keyboard=True, one_time_keyboard=False)
 
 
-def get_market_text():
-    return (
-        "💎 **Рынок алмазов**\n\n"
-        "Выбери пакет - оплатить можно Telegram Stars или картой/СБП.\n"
-        "Алмазы придут на баланс сразу после оплаты."
+async def market_menu(message: Message):
+    """Вызывается из main.py по кнопке '💎 Рынок' - открывает нижнее меню рынка."""
+    if isinstance(message, CallbackQuery):
+        message = message.message
+    await message.answer(
+        "💎 **Рынок**\n\nЗдесь можно пополнить запасы за реальные деньги.",
+        reply_markup=get_market_menu_kb(),
+        parse_mode="Markdown"
     )
 
 
-# ═══════════════════════════════════════════════════════════
-# ВХОД В РЫНОК (вызывается из main.py по кнопке "💎 Рынок")
-# ═══════════════════════════════════════════════════════════
-async def market_menu(message: Message):
-    if isinstance(message, CallbackQuery):
-        message = message.message
-    await message.answer(get_market_text(), reply_markup=get_market_kb(), parse_mode="Markdown")
+async def coming_soon(message: Message):
+    """Заглушка для разделов, которые ещё не готовы (Бонусы, Маски)."""
+    await message.answer("🔜 Скоро!")
 
 
 # ═══════════════════════════════════════════════════════════
-# ХЕНДЛЕРЫ (все на отдельном роутере, регистрируются через dp.include_router)
+# РАЗДЕЛ "АЛМАЗЫ": два отдельных списка - оплата Stars и оплата СБП/картой.
+# Каждая кнопка сразу запускает покупку конкретного пакета этим способом
+# оплаты (без промежуточного шага "выбери способ оплаты").
 # ═══════════════════════════════════════════════════════════
-@router.callback_query(F.data == "market_close")
-async def market_close(callback: CallbackQuery):
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
+def get_diamonds_kb():
+    rows = []
+
+    # --- Раздел 1: оплата Telegram Stars (работает всегда) ---
+    stars_row = []
+    for pkg in DIAMOND_PACKAGES:
+        diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
+        label = f"💎{diamonds_str} - {pkg['stars_price']}⭐"
+        stars_row.append(InlineKeyboardButton(text=label, callback_data=f"market_buy_stars_{pkg['key']}"))
+        if len(stars_row) == 2:
+            rows.append(stars_row)
+            stars_row = []
+    if stars_row:
+        rows.append(stars_row)
+
+    # Разделитель между секциями (не кликабельный по смыслу, просто заголовок)
+    rows.append([InlineKeyboardButton(text="💳 - - - ОПЛАТА СБП/КАРТОЙ - - - 💳", callback_data="market_noop")])
+
+    # --- Раздел 2: оплата СБП/картой ---
+    rub_row = []
+    for pkg in DIAMOND_PACKAGES:
+        diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
+        label = f"💎{diamonds_str} - {pkg['rub_price']}₽"
+        rub_row.append(InlineKeyboardButton(text=label, callback_data=f"market_buy_rub_{pkg['key']}"))
+        if len(rub_row) == 2:
+            rows.append(rub_row)
+            rub_row = []
+    if rub_row:
+        rows.append(rub_row)
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def diamonds_menu(message: Message):
+    """Вызывается из main.py по кнопке '💎 Алмазы' в подменю рынка."""
+    text = (
+        "💎 **Покупка алмазов**\n\n"
+        "⭐ Сверху - оплата Telegram Stars (работает сразу)\n"
+        "💳 Снизу - оплата СБП/картой\n\n"
+        "Чем больше пакет - тем дешевле 1 алмаз!"
+    )
+    await message.answer(text, reply_markup=get_diamonds_kb(), parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "market_noop")
+async def market_noop(callback: CallbackQuery):
+    # Кнопка-разделитель, ничего не делает, просто гасим "часики" на кнопке
     await callback.answer()
 
 
-@router.callback_query(F.data == "market_reopen")
-async def market_reopen(callback: CallbackQuery):
-    await callback.message.edit_text(get_market_text(), reply_markup=get_market_kb(), parse_mode="Markdown")
-
-
-@router.callback_query(F.data.startswith("market_pkg_"))
-async def market_package_view(callback: CallbackQuery):
-    key = callback.data.replace("market_pkg_", "", 1)
-    pkg = next((p for p in DIAMOND_PACKAGES if p["key"] == key), None)
-    if not pkg:
-        await callback.answer("Пакет не найден", show_alert=True)
-        return
-
-    diamonds_str = f"{pkg['diamonds']:,}".replace(",", " ")
-    rows = [
-        [InlineKeyboardButton(text=f"⭐ Оплатить {pkg['stars_price']} Stars", callback_data=f"market_pay_stars_{key}")],
-    ]
-    # Кнопка оплаты рублями появляется, только если админ настроил провайдера платежей
-    if config.PAYMENT_PROVIDER_TOKEN:
-        rows.append([InlineKeyboardButton(text=f"💳 Оплатить {pkg['rub_price']} ₽ (СБП/карта)", callback_data=f"market_pay_rub_{key}")])
-    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="market_reopen")])
-    kb = InlineKeyboardMarkup(inline_keyboard=rows)
-
-    await callback.message.edit_text(f"💎 **{diamonds_str} алмазов**\n\nВыбери способ оплаты:", reply_markup=kb, parse_mode="Markdown")
-
-
-@router.callback_query(F.data.startswith("market_pay_stars_"))
+@router.callback_query(F.data.startswith("market_buy_stars_"))
 async def market_pay_stars(callback: CallbackQuery, bot: Bot):
-    key = callback.data.replace("market_pay_stars_", "", 1)
+    key = callback.data.replace("market_buy_stars_", "", 1)
     pkg = next((p for p in DIAMOND_PACKAGES if p["key"] == key), None)
     if not pkg:
         await callback.answer("Пакет не найден", show_alert=True)
@@ -131,16 +148,21 @@ async def market_pay_stars(callback: CallbackQuery, bot: Bot):
     )
 
 
-@router.callback_query(F.data.startswith("market_pay_rub_"))
+@router.callback_query(F.data.startswith("market_buy_rub_"))
 async def market_pay_rub(callback: CallbackQuery, bot: Bot):
-    key = callback.data.replace("market_pay_rub_", "", 1)
+    key = callback.data.replace("market_buy_rub_", "", 1)
     pkg = next((p for p in DIAMOND_PACKAGES if p["key"] == key), None)
     if not pkg:
         await callback.answer("Пакет не найден", show_alert=True)
         return
 
     if not config.PAYMENT_PROVIDER_TOKEN:
-        await callback.answer("Оплата картой/СБП сейчас не настроена администратором.", show_alert=True)
+        # СБП пока не подключён администратором (нужен provider_token от
+        # платёжного провайдера, поддерживающего RUB - см. обсуждение в чате).
+        await callback.answer(
+            "💳 Оплата СБП/картой пока в разработке - скоро будет доступна!",
+            show_alert=True
+        )
         return
 
     await callback.answer()
