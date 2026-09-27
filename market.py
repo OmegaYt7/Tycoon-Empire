@@ -335,7 +335,15 @@ def _format_donation_line(don):
     else:
         amount_str = f"{don['amount'] / 100:.0f} {don['currency']}"
     diamonds_str = f"{don['diamonds']:,}".replace(",", " ")
-    date_str = don.get("date", "?")
+
+    raw_date = don.get("date", "?")
+    try:
+        # Дата хранится в ISO-формате (с буквой T между датой и временем) -
+        # для показа игроку/админу переводим в привычный вид ДД.ММ.ГГГГ ЧЧ:ММ
+        date_str = datetime.fromisoformat(raw_date).strftime("%d.%m.%Y %H:%M")
+    except (ValueError, TypeError):
+        date_str = raw_date
+
     return f"{method_label} | {amount_str} → 💎{diamonds_str} | {date_str}"
 
 
