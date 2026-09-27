@@ -171,14 +171,19 @@ main_quests_info = [
 
 # ═══════════════════════════════════════════════════════════
 # РЫНОК: пакеты алмазов за реальные деньги
-# stars_price - цена в Telegram Stars (целое число, без копеек/минорных единиц)
-# rub_price   - цена в рублях для оплаты через СБП/карту (тоже целое число рублей)
+# stars_price - цена в Telegram Stars (целое число)
+# rub_price   - цена в рублях для оплаты через СБП/карту (целое число рублей)
+# Цена за 1 алмаз специально УМЕНЬШАЕТСЯ с ростом пакета (см. столбец
+# "цена/шт" ниже) - это стимулирует покупать более крупные пакеты.
 # Цены ориентировочные - поправь под себя в любой момент, это не сложно.
 # ═══════════════════════════════════════════════════════════
 DIAMOND_PACKAGES = [
-    {"key": "d10",   "diamonds": 10,   "stars_price": 15,   "rub_price": 19},
-    {"key": "d50",   "diamonds": 50,   "stars_price": 65,   "rub_price": 79},
-    {"key": "d100",  "diamonds": 100,  "stars_price": 120,  "rub_price": 149},
-    {"key": "d500",  "diamonds": 500,  "stars_price": 550,  "rub_price": 699},
-    {"key": "d1000", "diamonds": 1000, "stars_price": 1000, "rub_price": 1299},
+    {"key": "d5",    "diamonds": 5,    "stars_price": 5,   "rub_price": 9},    # 1.00 ⭐/шт
+    {"key": "d10",   "diamonds": 10,   "stars_price": 9,   "rub_price": 15},   # 0.90 ⭐/шт
+    {"key": "d25",   "diamonds": 25,   "stars_price": 20,  "rub_price": 33},   # 0.80 ⭐/шт
+    {"key": "d50",   "diamonds": 50,   "stars_price": 35,  "rub_price": 55},   # 0.70 ⭐/шт
+    {"key": "d100",  "diamonds": 100,  "stars_price": 60,  "rub_price": 95},   # 0.60 ⭐/шт
+    {"key": "d250",  "diamonds": 250,  "stars_price": 125, "rub_price": 195},  # 0.50 ⭐/шт
+    {"key": "d500",  "diamonds": 500,  "stars_price": 200, "rub_price": 310},  # 0.40 ⭐/шт
+    {"key": "d1000", "diamonds": 1000, "stars_price": 300, "rub_price": 470},  # 0.30 ⭐/шт
 ]
