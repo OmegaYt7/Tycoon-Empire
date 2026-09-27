@@ -1112,8 +1112,9 @@ async def quests_daily(callback: CallbackQuery):
         minutes, seconds = divmod(remainder, 60)
         time_left = f"{hours:02}:{minutes:02}:{seconds:02}"
         tz_label = get_server_tz_label()
+        current_time_str = now.strftime("%H:%M:%S")
         await callback.answer(
-            f"✅ Всё выполнено!\nОбновление через: {time_left}\n🕒 Сброс в 00:00 ({tz_label})",
+            f"✅ Всё выполнено!\nСейчас: {current_time_str} ({tz_label})\nОбновление через: {time_left}",
             show_alert=True
         )
         return
@@ -1126,7 +1127,12 @@ async def quests_daily(callback: CallbackQuery):
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="quests_back_root")])
     streak_fmt = f"{user['daily_streak']:,}".replace(",", " ")
     tz_label = get_server_tz_label()
-    text = (f"📅 **Ежедневные задания**\n🔥 Серия: **{streak_fmt} дн.**\n🕒 Сброс в 00:00 ({tz_label}) — время сервера")
+    current_time_str = datetime.now().strftime("%H:%M:%S")
+    text = (
+        f"📅 **Ежедневные задания**\n🔥 Серия: **{streak_fmt} дн.**\n"
+        f"🕒 Сейчас на сервере: **{current_time_str}** ({tz_label})\n"
+        f"🔄 Сброс заданий: **00:00** ({tz_label})"
+    )
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("view_daily_"))
