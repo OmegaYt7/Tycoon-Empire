@@ -482,6 +482,7 @@ async def start(message: Message):
             "balance": 0, 
             "diamonds": 0,
             "total_diamonds_earned": 0,
+            "donations": [],  # история реальных покупок (Stars/СБП) - см. market.py
             "diamond_chance_bonus": 0.0,
             "tap_mult": 1,
             "passive_per_minute": 0,
