@@ -24,6 +24,7 @@ import config
 import database
 import promocodes
 import admin_panel
+import market
 
 # Настройка логирования
 logging.basicConfig(level=logging.WARNING)
@@ -46,7 +47,7 @@ users = {}
 async def autosave_loop():
     consecutive_failures = 0
     while True:
-        await asyncio.sleep(90)  # Сохраняем каждые 1.5 минуты (было 10 минут — слишком редко)
+        await asyncio.sleep(90)  # Сохраняем каждые 1.5 минуты (было 10 минут - слишком редко)
         try:
             ok = await database.save_all_users(users)
         except Exception as e:
@@ -57,7 +58,7 @@ async def autosave_loop():
             consecutive_failures = 0
         else:
             consecutive_failures += 1
-            # Если БД не пишется несколько раз подряд — сразу сигналим админам,
+            # Если БД не пишется несколько раз подряд - сразу сигналим админам,
             # чтобы не узнавать о проблеме постфактум от игроков
             if consecutive_failures in (2, 5) or consecutive_failures % 20 == 0:
                 for admin_id in config.ADMIN_IDS:
@@ -154,11 +155,11 @@ def get_level_exp(level):
     ВАЖНО (баг, который тут был раньше): множитель роста (1.4 -> 2.5)
     возводился в степень (level - 1), то есть одновременно рос и сам
     множитель, и степень, в которую он возводится. Это давало ДВОЙНУЮ
-    экспоненту: уже на 20 уровне требовалось ~15 млн XP, на 30 — ~300 млрд,
-    на 40 — ~44 квадриллиона. Дальше прокачаться было физически невозможно.
+    экспоненту: уже на 20 уровне требовалось ~15 млн XP, на 30 - ~300 млрд,
+    на 40 - ~44 квадриллиона. Дальше прокачаться было физически невозможно.
 
     Исправление: множитель применяется НАКОПИТЕЛЬНО (умножаем предыдущее
-    требование на текущий множитель), как и описано в комментарии ниже —
+    требование на текущий множитель), как и описано в комментарии ниже -
     это именно линейный рост самого множителя, а не двойная экспонента.
     """
     if level in _level_exp_cache:
@@ -275,6 +276,7 @@ def main_menu():
         [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🏪 Магазин")],
         [KeyboardButton(text="🏗️ Сооружения"), KeyboardButton(text="📝 Задания")],
         [KeyboardButton(text="🏆 Топ-10"), KeyboardButton(text="⚙️ Настройки")],
+        [KeyboardButton(text="💎 Рынок")],
         [KeyboardButton(text="💰 Тапать монеты")]
     ], resize_keyboard=True, one_time_keyboard=False)
 
@@ -344,7 +346,7 @@ def calculate_passive(user):
 
 def get_server_tz_label():
     """Возвращает смещение часового пояса сервера, например 'UTC+00:00'.
-    Ежедневный сброс заданий происходит в полночь ИМЕННО по этому времени —
+    Ежедневный сброс заданий происходит в полночь ИМЕННО по этому времени -
     у игроков в разных часовых поясах локальная полночь будет отличаться,
     поэтому важно показывать это явно, а не просто "00:00"."""
     offset = datetime.now().astimezone().strftime('%z')  # напр. '+0000' или '+0300'
@@ -393,11 +395,11 @@ async def check_quest_notifications(message: Message, user_id: int):
                 )
                 user["notified_quests"].append(key)
             except TelegramForbiddenError:
-                # Игрок заблокировал бота — уведомлять некого, помечаем,
+                # Игрок заблокировал бота - уведомлять некого, помечаем,
                 # чтобы не пытаться снова на каждом действии.
                 user["notified_quests"].append(key)
             except Exception as e:
-                # Временная ошибка (сеть, rate limit и т.п.) — НЕ помечаем
+                # Временная ошибка (сеть, rate limit и т.п.) - НЕ помечаем
                 # уведомление отправленным, чтобы попробовать снова при
                 # следующем действии игрока вместо потери уведомления навсегда.
                 logging.warning(f"Не удалось отправить уведомление о задании {key} игроку {user_id}: {e}")
@@ -439,7 +441,7 @@ async def show_main_interface(message: Message, user_id: int):
     bonus_fmt = f"{finger_bonus:,}".replace(",", " ")
     
     text = (f"🌟<b>Добро пожаловать в Tycoon Empire!</b>🌟\n\n"
-            f"Ты — будущий миллиардер! Начинай тапать и строй свою империю прямо сейчас!\n\n"
+            f"Ты - будущий миллиардер! Начинай тапать и строй свою империю прямо сейчас!\n\n"
             f"🆔 Твой ID: <code>{user['custom_id']}</code>\n"
             f"👤 Ник: <b>{safe_nick}</b>\n"
             f"💰 Баланс: {user['balance']:,} монет\n"
@@ -629,7 +631,7 @@ async def admin_edit_receive_value(message: Message, state: FSMContext):
             amount_str = f"{abs(value):,}".replace(",", " ")
             await bot.send_message(
                 target_id,
-                f"🎁 <b>Тебе {verb}:</b> {field_info['label']} — {amount_str}\n"
+                f"🎁 <b>Тебе {verb}:</b> {field_info['label']} - {amount_str}\n"
                 f"Текущее значение: {new_str}",
                 parse_mode="HTML"
             )
@@ -704,6 +706,7 @@ async def handle_text(message: Message):
     if message.text == "💰 Тапать монеты": await show_tap(message)
     elif message.text == "📊 Профиль": await profile(message)
     elif message.text == "🏪 Магазин": await shop(message)
+    elif message.text == "💎 Рынок": await market.market_menu(message)
     elif message.text == "🏗️ Сооружения": await buildings_shop(message)
     elif message.text == "📝 Задания": await quests_menu(message)
     elif message.text == "👥 Рефералка": await referral(message)
@@ -1131,7 +1134,7 @@ async def quests_daily(callback: CallbackQuery):
     text = (
         f"📅 **Ежедневные задания**\n🔥 Серия: **{streak_fmt} дн.**\n"
         f"🕒 Сейчас на сервере: **{current_time_str}** ({tz_label})\n"
-        f"🔄 Сброс заданий: **00:00** ({tz_label})"
+        f"🔄 Сброс заданий: **00:00**"
     )
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
@@ -1420,7 +1423,7 @@ async def buy_upgrade(callback: CallbackQuery):
     await database.save_user(user_id, user)
     
     await callback.answer(f"🎉 Ты купил {info['name']}! (+{xp_amount} XP)", show_alert=True)
-    # Проверяем ОБА типа заданий сразу (не только основные) — раньше это было
+    # Проверяем ОБА типа заданий сразу (не только основные) - раньше это было
     # пропущено, и уведомление о выполненном задании приходило с задержкой
     # (только на следующем действии, например следующем тапе).
     await check_quest_notifications(callback.message, user_id)
@@ -1596,7 +1599,7 @@ async def upgrade_building(callback: CallbackQuery):
     
     await callback.answer(f"🎉 Улучшено! (+{xp_amount} XP)", show_alert=True)
     # ВАЖНО: улучшение здания может увеличить пассивный доход или общую сумму
-    # трат за один клик — а это как раз условия основных заданий типа "income"
+    # трат за один клик - а это как раз условия основных заданий типа "income"
     # и "spent". Раньше здесь проверялись только ежедневные задания, поэтому
     # такие основные задания "зависали" до следующего тапа.
     await check_quest_notifications(callback.message, user_id)
@@ -1629,7 +1632,7 @@ async def claim_building(callback: CallbackQuery):
         await database.save_user(user_id, user)
 
     await callback.answer(f"🎉 Забрано {accumulated:,} монет!", show_alert=True)
-    # Сбор дохода меняет баланс — а "balance"-задания проверяются в
+    # Сбор дохода меняет баланс - а "balance"-задания проверяются в
     # check_quest_notifications, не в check_daily_notifications.
     await check_quest_notifications(callback.message, user_id)
     await check_daily_notifications(user_id)
@@ -1684,7 +1687,7 @@ async def show_top10_category(callback: CallbackQuery):
         if category == "balance": val = f"{data['balance']:,}".replace(",", " ") + " монет"
         elif category == "diamonds": val = f"{data['diamonds']:,}".replace(",", " ") + " 💎"
         elif category == "referrals": val = f"{data['referrals']:,}".replace(",", " ") + " друзей"
-        text += f"{i}️⃣ {user_link} — {val}\n"
+        text += f"{i}️⃣ {user_link} - {val}\n"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="back_top10")]])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
@@ -1706,6 +1709,11 @@ async def main():
     # 2. Подключение к БД и создание таблиц
     # При вызове create_pool теперь создается и таблица (init_db)
     await database.create_pool() 
+
+    # 2.5. Подключаем модуль "Рынок" (market.py): даём ему доступ к общему
+    # словарю users и к функции проверки заданий, регистрируем его роутер.
+    market.setup(users, check_quest_notifications)
+    dp.include_router(market.router)
     
     # Настройка Graceful Shutdown
     loop = asyncio.get_running_loop()
@@ -1715,7 +1723,7 @@ async def main():
     def signal_handler():
         stop_event.set()
         # ВАЖНО: раньше сигнал только выставлял флаг, но dp.start_polling()
-        # его не проверял и продолжал работать — хостинг "убивал" процесс
+        # его не проверял и продолжал работать - хостинг "убивал" процесс
         # без финального сохранения. Теперь явно останавливаем поллинг.
         asyncio.create_task(dp.stop_polling())
 
@@ -1734,7 +1742,7 @@ async def main():
         await start_web_server()
         
         if config.TEST_MODE:
-            logging.warning("🧪🧪🧪 БОТ ЗАПУЩЕН В TEST_MODE — ЗАПИСЬ В БАЗУ ДАННЫХ ОТКЛЮЧЕНА! 🧪🧪🧪")
+            logging.warning("🧪🧪🧪 БОТ ЗАПУЩЕН В TEST_MODE - ЗАПИСЬ В БАЗУ ДАННЫХ ОТКЛЮЧЕНА! 🧪🧪🧪")
         
         # 5. Фоновое сохранение
         save_task = asyncio.create_task(autosave_loop())
@@ -1746,7 +1754,7 @@ async def main():
             try:
                 await bot.delete_webhook(drop_pending_updates=True)
                 await dp.start_polling(bot)
-                # start_polling завершился без ошибки — значит его остановили
+                # start_polling завершился без ошибки - значит его остановили
                 # через dp.stop_polling() (сигнал завершения), выходим из цикла.
                 break
             except Exception as e:
@@ -1758,7 +1766,7 @@ async def main():
     finally:
         if save_task:
             save_task.cancel()
-        # Финальное сохранение — гарантия, что при остановке бота (кнопка на
+        # Финальное сохранение - гарантия, что при остановке бота (кнопка на
         # хостинге, редеплой и т.п.) не потеряются данные с момента последнего
         # автосохранения. В TEST_MODE ничего не запишется, как и задумано.
         try:
