@@ -178,12 +178,12 @@ main_quests_info = [
 # Цены ориентировочные - поправь под себя в любой момент, это не сложно.
 # ═══════════════════════════════════════════════════════════
 DIAMOND_PACKAGES = [
-    {"key": "d5",    "diamonds": 5,    "stars_price": 5,   "rub_price": 8},     # 0%  скидка
-    {"key": "d10",   "diamonds": 10,   "stars_price": 10,  "rub_price": 17},    # 5%  скидка
-    {"key": "d25",   "diamonds": 25,   "stars_price": 22,  "rub_price": 37},    # 10% скидка
-    {"key": "d50",   "diamonds": 50,   "stars_price": 42,  "rub_price": 71},    # 15% скидка
-    {"key": "d100",  "diamonds": 100,  "stars_price": 80,  "rub_price": 136},   # 20% скидка
-    {"key": "d250",  "diamonds": 250,  "stars_price": 188, "rub_price": 320},   # 25% скидка
-    {"key": "d500",  "diamonds": 500,  "stars_price": 350, "rub_price": 595},   # 30% скидка
-    {"key": "d1000", "diamonds": 1000, "stars_price": 650, "rub_price": 1105},  # 35% скидка (было 70% - перебор)
+    {"key": "d5",    "diamonds": 5,    "stars_price": 5,   "rub_price": 8},
+    {"key": "d10",   "diamonds": 10,   "stars_price": 10,  "rub_price": 17},
+    {"key": "d25",   "diamonds": 25,   "stars_price": 22,  "rub_price": 37},
+    {"key": "d50",   "diamonds": 50,   "stars_price": 40,  "rub_price": 71},
+    {"key": "d100",  "diamonds": 100,  "stars_price": 80,  "rub_price": 120},
+    {"key": "d250",  "diamonds": 250,  "stars_price": 200, "rub_price": 300},
+    {"key": "d500",  "diamonds": 500,  "stars_price": 400, "rub_price": 600},
+    {"key": "d1000", "diamonds": 1000, "stars_price": 700, "rub_price": 1000},
 ]
