@@ -486,6 +486,7 @@ async def start(message: Message):
             "donations": [],  # история реальных покупок (Stars/СБП) - см. market.py
             "login_streak": 0,
             "last_login_reward_date": None,  # см. daily_login.py
+            "login_game_played": False,  # сыграна ли уже мини-игра за сегодняшний день цикла
             "diamond_chance_bonus": 0.0,
             "tap_mult": 1,
             "passive_per_minute": 0,
