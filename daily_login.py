@@ -1,14 +1,23 @@
 """
 daily_login.py
-Ежедневная награда (7-дневный календарь) + мини-игры на бонус.
+Ежедневная награда (7-дневный календарь) + СВОЯ уникальная мини-игра на
+каждый день цикла (не рандом, а строго закреплено):
+  День 1 - Лисичка, что делаешь? (Simon Says)
+  День 2 - Логика (найди лишнее)
+  День 3 - Взрывные крестики-нолики (5x5, 4 в ряд, скрытые мины)
+  День 4 - Слова (собери слово по буквам)
+  День 5 - Найди пару (5x5, с джокером-приколюхой)
+  День 6 - Собери картинку по памяти (5x5, запомни узор)
+  День 7 - Детектив (улики -> вычисли виновного)
 
-Награда за день НЕ фиксированная - считается от текущего пассивного дохода
-игрока (passive_per_minute), поэтому одинаково ощутима что для новичка,
-что для игрока с миллиардами: это X минут его собственного дохода.
+Награда за день считается от текущего пассивного дохода игрока, поэтому
+одинаково ощутима что для новичка, что для игрока с миллиардами.
 
-После получения награды игроку случайно выпадает одна из 5 мини-игр:
-крестики-нолики, найди пару, камень-ножницы-бумага, слот-машина, угадай
-число. Выигрыш - доп.бонус монетами, проигрыш - ничего (без наказаний).
+Состояния дня в календаре:
+  🔒 - день ещё не открыт
+  🎁 - награда доступна к получению
+  🎮 - награда получена, мини-игра этого дня ещё не сыграна
+  ✅ - всё сделано на сегодня
 
 Подключение в main.py:
     import daily_login
@@ -23,6 +32,7 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 import database
+import admin_panel
 
 router = Router()
 
@@ -47,6 +57,16 @@ REWARD_MINUTES = {1: 15, 2: 20, 3: 25, 4: 30, 5: 40, 6: 50, 7: 70}
 DAY7_BONUS_DIAMONDS = 10
 MIN_REWARD_PER_DAY = 500  # подстраховка для игроков без пассивного дохода
 
+DAY_GAME_NAMES = {
+    1: "🦊 Лисичка, что делаешь?",
+    2: "🧠 Логика",
+    3: "💥 Взрывные крестики-нолики",
+    4: "📝 Слова",
+    5: "🃏 Найди пару",
+    6: "🎨 Собери картинку по памяти",
+    7: "🔍 Детектив",
+}
+
 
 def _calc_reward_coins(user, day):
     minutes = REWARD_MINUTES.get(day, 15)
@@ -56,17 +76,14 @@ def _calc_reward_coins(user, day):
 
 
 def _get_streak_state(user):
-    """Возвращает (claimed_today: bool, current_day: int 1..7, streak: int).
-    current_day - это День календаря, который либо уже забран сегодня,
-    либо доступен для получения прямо сейчас."""
+    """Возвращает (claimed_today, current_day 1..7, streak, game_played)."""
     today = date.today()
     last_date_str = user.get("last_login_reward_date")
     streak = user.get("login_streak", 0)
 
     if last_date_str == today.isoformat():
-        # Уже забирал сегодня
         current_day = ((streak - 1) % 7) + 1
-        return True, current_day, streak
+        return True, current_day, streak, user.get("login_game_played", False)
 
     if last_date_str:
         last_date = date.fromisoformat(last_date_str)
@@ -74,22 +91,24 @@ def _get_streak_state(user):
             streak = 0  # пропустил день - цикл сбрасывается на День 1
 
     current_day = (streak % 7) + 1
-    return False, current_day, streak
+    return False, current_day, streak, False
 
 
-def get_calendar_kb(claimed_today, current_day):
-    rows = []
-    row = []
+def get_calendar_kb(claimed_today, current_day, game_played, is_admin=False):
+    rows, row = [], []
     for day in range(1, 8):
-        if day < current_day or (day == current_day and claimed_today):
-            label = f"✅{day}"
-            cb = "daily_noop"
+        if is_admin:
+            # Тестовый режим для админов: любой день всегда кликабелен -
+            # сразу запускает игру этого дня, минуя реальный цикл наград.
+            label, cb = f"🧪{day}", f"daily_admintest_{day}"
+        elif day < current_day or (day == current_day and claimed_today and game_played):
+            label, cb = f"✅{day}", "daily_noop"
+        elif day == current_day and claimed_today and not game_played:
+            label, cb = f"🎮{day}", "daily_playday"
         elif day == current_day:
-            label = f"🎁{day}"
-            cb = "daily_claim"
+            label, cb = f"🎁{day}", "daily_claim"
         else:
-            label = f"🔒{day}"
-            cb = "daily_noop"
+            label, cb = f"🔒{day}", "daily_noop"
         row.append(InlineKeyboardButton(text=label, callback_data=cb))
         if len(row) == 4:
             rows.append(row)
@@ -106,21 +125,25 @@ async def daily_menu(message: Message):
     if not user:
         return
 
-    claimed_today, current_day, _ = _get_streak_state(user)
+    claimed_today, current_day, _, game_played = _get_streak_state(user)
+    game_name = DAY_GAME_NAMES[current_day]
+    is_admin = admin_panel.is_admin(user_id)
 
-    if claimed_today:
-        text = (
-            "🎁 **Ежедневная награда**\n\n"
-            "Сегодняшняя награда уже забрана - возвращайся завтра!"
-        )
+    if is_admin:
+        text = "🎁 **Ежедневная награда**\n\n🧪 Ты админ - все 7 дней доступны для теста, жми любой!"
+    elif claimed_today and game_played:
+        text = "🎁 **Ежедневная награда**\n\nСегодня всё забрано и сыграно - возвращайся завтра!"
+    elif claimed_today and not game_played:
+        text = f"🎁 **Ежедневная награда**\n\nНаграда за День {current_day} уже получена!\nОсталось сыграть: {game_name}"
     else:
         text = (
-            "🎁 **Ежедневная награда**\n\n"
+            f"🎁 **Ежедневная награда**\n\n"
             f"Собери награду за День {current_day} из 7!\n"
-            "Пропустишь день - серия начнётся заново."
+            f"Сегодняшняя игра: {game_name}\n"
+            f"Пропустишь день - серия начнётся заново."
         )
 
-    kb = get_calendar_kb(claimed_today, current_day)
+    kb = get_calendar_kb(claimed_today, current_day, game_played, is_admin)
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
@@ -137,7 +160,7 @@ async def daily_claim(callback: CallbackQuery):
         await callback.answer("Ошибка", show_alert=True)
         return
 
-    claimed_today, current_day, streak = _get_streak_state(user)
+    claimed_today, current_day, streak, _ = _get_streak_state(user)
     if claimed_today:
         await callback.answer("Уже забрано сегодня!", show_alert=True)
         return
@@ -159,322 +182,480 @@ async def daily_claim(callback: CallbackQuery):
 
     user["login_streak"] = streak
     user["last_login_reward_date"] = date.today().isoformat()
+    user["login_game_played"] = False
     await database.save_user(user_id, user)
 
-    # Бонус для мини-игры - половина сегодняшней награды, но не меньше 100
+    # Бонус за победу в мини-игре - половина сегодняшней награды, но не меньше 100
     _game_bonus[user_id] = max(reward_coins // 2, 100)
 
     coins_str = f"{reward_coins:,}".replace(",", " ")
+    game_name = DAY_GAME_NAMES[current_day]
     text = (
         f"✅ **День {current_day} получен!**\n\n"
         f"💰 +{coins_str} монет{bonus_text}\n\n"
-        f"Хочешь испытать удачу и сыграть на доп.бонус?"
+        f"Сегодняшняя игра: {game_name}\nСыграй, чтобы получить доп.бонус!"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎲 Сыграть на бонус!", callback_data="daily_play_game")]
+        [InlineKeyboardButton(text=f"▶️ Играть: {game_name}", callback_data="daily_playday")]
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("daily_admintest_"))
+async def daily_admin_test(callback: CallbackQuery, bot: Bot):
+    if not admin_panel.is_admin(callback.from_user.id):
+        return
+
+    day = int(callback.data.replace("daily_admintest_", "", 1))
+    starters = {
+        1: start_fox_game, 2: start_logic_game, 3: start_exploding_ttt,
+        4: start_words_game, 5: start_memory_game, 6: start_picture_game,
+        7: start_detective_game,
+    }
+    starter = starters[day]
+    # На всякий случай выдаём тестовый бонус-фонд, чтобы победа тоже
+    # отработала как обычно (без реального клейма награды через daily_claim)
+    _game_bonus.setdefault(callback.from_user.id, 200)
+    if day == 3:
+        await starter(callback, bot)
+    else:
+        await starter(callback)
+
+
+@router.callback_query(F.data == "daily_playday")
+async def daily_playday(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    user = _users.get(user_id) if _users else None
+    if not user:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    claimed_today, current_day, _, game_played = _get_streak_state(user)
+    if not claimed_today:
+        await callback.answer("Сначала забери награду за сегодня!", show_alert=True)
+        return
+    if game_played:
+        await callback.answer("Игра за сегодня уже сыграна!", show_alert=True)
+        return
+
+    starters = {
+        1: start_fox_game, 2: start_logic_game, 3: start_exploding_ttt,
+        4: start_words_game, 5: start_memory_game, 6: start_picture_game,
+        7: start_detective_game,
+    }
+    starter = starters[current_day]
+    if current_day == 3:
+        await starter(callback, bot)
+    else:
+        await starter(callback)
+
+
 # ═══════════════════════════════════════════════════════════
-# ОБЩАЯ ЛОГИКА ЗАВЕРШЕНИЯ ЛЮБОЙ МИНИ-ИГРЫ
+# ОБЩАЯ ЛОГИКА ЗАВЕРШЕНИЯ ЛЮБОЙ МИНИ-ИГРЫ ДНЯ
 # ═══════════════════════════════════════════════════════════
 async def _apply_result_and_get_text(user_id, won, result_text):
     user = _users.get(user_id) if _users else None
-    if won and user:
-        bonus = _game_bonus.pop(user_id, 200)
-        user["balance"] += bonus
+    if user:
+        user["login_game_played"] = True
+        if won:
+            bonus = _game_bonus.pop(user_id, 200)
+            user["balance"] += bonus
+            bonus_str = f"{bonus:,}".replace(",", " ")
+            result_text += f"\n\n💰 Бонус: +{bonus_str} монет!"
+        else:
+            _game_bonus.pop(user_id, None)
+            result_text += "\n\nНе повезло - в следующий раз получится! Возвращайся завтра за новым днём."
         await database.save_user(user_id, user)
-        bonus_str = f"{bonus:,}".replace(",", " ")
-        result_text += f"\n\n💰 Бонус: +{bonus_str} монет!"
-    else:
-        _game_bonus.pop(user_id, None)
-        result_text += "\n\nНе повезло - в следующий раз получится!"
     return result_text
 
 
-async def finish_minigame(callback: CallbackQuery, won: bool, result_text: str):
-    """Для игр, где это первый и единственный edit+answer за этот callback."""
+async def finish_daily_game(callback: CallbackQuery, won: bool, result_text: str):
+    """Для игр, где это последний edit+answer в текущем callback."""
     text = await _apply_result_and_get_text(callback.from_user.id, won, result_text)
     await callback.message.edit_text(text, parse_mode="Markdown")
     await callback.answer()
 
 
-async def finish_minigame_silent(callback: CallbackQuery, won: bool, result_text: str):
-    """Как finish_minigame, но без повторного callback.answer() - для игр,
-    где answer() уже был вызван раньше в этом же хендлере (Найди пару)."""
+async def finish_daily_game_silent(callback: CallbackQuery, won: bool, result_text: str):
+    """Как finish_daily_game, но без повторного callback.answer()."""
     text = await _apply_result_and_get_text(callback.from_user.id, won, result_text)
     await callback.message.edit_text(text, parse_mode="Markdown")
 
 
-# ═══════════════════════════════════════════════════════════
-# ВЫБОР СЛУЧАЙНОЙ МИНИ-ИГРЫ
-# ═══════════════════════════════════════════════════════════
-@router.callback_query(F.data == "daily_play_game")
-async def daily_play_game(callback: CallbackQuery, bot: Bot):
-    game = random.choice(["ttt", "memory", "rps", "slot", "guess"])
-    if game == "ttt":
-        await start_tictactoe(callback)
-    elif game == "memory":
-        await start_memory(callback)
-    elif game == "rps":
-        await start_rps(callback)
-    elif game == "slot":
-        await start_slot(callback, bot)
-    elif game == "guess":
-        await start_guess(callback)
-
-
-# ═══════════════════════════════════════════════════════════
-# ИГРА 1: КАМЕНЬ-НОЖНИЦЫ-БУМАГА
-# ═══════════════════════════════════════════════════════════
-RPS_BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
-RPS_EMOJI = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
-
-
-async def start_rps(callback: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🪨", callback_data="rps_rock"),
-        InlineKeyboardButton(text="📄", callback_data="rps_paper"),
-        InlineKeyboardButton(text="✂️", callback_data="rps_scissors"),
-    ]])
-    await callback.message.edit_text("✊✋✌️ **Камень-ножницы-бумага**\n\nВыбирай!", reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("rps_"))
-async def rps_play(callback: CallbackQuery):
-    user_choice = callback.data.replace("rps_", "", 1)
-    bot_choice = random.choice(list(RPS_BEATS.keys()))
-
-    if user_choice == bot_choice:
-        result_text = "🤝 Ничья!"
-        won = False
-    elif RPS_BEATS[user_choice] == bot_choice:
-        result_text = "🎉 Ты выиграл!"
-        won = True
-    else:
-        result_text = "😢 Ты проиграл."
-        won = False
-
-    text = f"{RPS_EMOJI[user_choice]} против {RPS_EMOJI[bot_choice]}\n\n{result_text}"
-    await finish_minigame(callback, won, text)
-
-
-# ═══════════════════════════════════════════════════════════
-# ИГРА 2: УГАДАЙ ЧИСЛО (1-10)
-# ═══════════════════════════════════════════════════════════
-_guess_target = {}
-
-
-async def start_guess(callback: CallbackQuery):
-    target = random.randint(1, 10)
-    _guess_target[callback.from_user.id] = target
-
-    rows, row = [], []
-    for n in range(1, 11):
-        row.append(InlineKeyboardButton(text=str(n), callback_data=f"guess_{n}"))
-        if len(row) == 5:
-            rows.append(row)
-            row = []
-    kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    await callback.message.edit_text("🎲 **Угадай число от 1 до 10!**", reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("guess_"))
-async def guess_play(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    guess_val = int(callback.data.replace("guess_", "", 1))
-    target = _guess_target.pop(user_id, random.randint(1, 10))
-
-    won = (guess_val == target)
-    text = f"Ты выбрал {guess_val}, загадано было {target}.\n\n" + ("🎉 Угадал!" if won else "😢 Не угадал.")
-    await finish_minigame(callback, won, text)
-
-
-# ═══════════════════════════════════════════════════════════
-# ИГРА 3: СЛОТ-МАШИНА (нативный дайс Telegram - никакой ручной анимации не нужно)
-# ═══════════════════════════════════════════════════════════
-async def start_slot(callback: CallbackQuery, bot: Bot):
-    await callback.answer()
-    user_id = callback.from_user.id
-
-    try:
-        dice_msg = await bot.send_dice(chat_id=user_id, emoji="🎰")
-    except Exception as e:
-        logging.warning(f"Не удалось отправить слот-машину: {e}")
-        return
-
-    await asyncio.sleep(2.5)  # ждём, пока проиграется анимация барабанов
-
-    value = dice_msg.dice.value - 1  # 0..63
-    reel1, reel2, reel3 = value % 4, (value // 4) % 4, (value // 16) % 4
-    won = (reel1 == reel2 == reel3)
-
-    text = "🎰 **Слот-машина**\n\n" + ("🎉 Джекпот! Три одинаковых символа!" if won else "😢 Не в этот раз.")
-    text = await _apply_result_and_get_text(user_id, won, text)
+async def finish_daily_game_new_message(user_id: int, bot: Bot, won: bool, result_text: str):
+    """Для игр, где ответ шлётся отдельным сообщением (взрыв.крестики через bot.send_message)."""
+    text = await _apply_result_and_get_text(user_id, won, result_text)
     await bot.send_message(user_id, text, parse_mode="Markdown")
 
 
 # ═══════════════════════════════════════════════════════════
-# ИГРА 4: КРЕСТИКИ-НОЛИКИ (игрок X, бот O с простой логикой выиграть/заблокировать)
+# ДЕНЬ 1: ЛИСИЧКА, ЧТО ДЕЛАЕШЬ? (Simon Says)
 # ═══════════════════════════════════════════════════════════
-_ttt_boards = {}
-
-TTT_LINES = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
-
-
-def _ttt_check_winner(board):
-    for a, b, c in TTT_LINES:
-        if board[a] and board[a] == board[b] == board[c]:
-            return board[a]
-    if all(board):
-        return "draw"
-    return None
+_fox_games = {}
+FOX_EMOJI = ["🐾", "🍃", "🎵", "🔥"]
+FOX_SEQUENCE_LEN = 5
 
 
-def _ttt_bot_move(board):
-    empties = [i for i, v in enumerate(board) if not v]
-    for i in empties:  # 1. выиграть, если можно
-        b = board[:]; b[i] = "O"
-        if _ttt_check_winner(b) == "O":
+async def start_fox_game(callback: CallbackQuery):
+    sequence = [random.choice(FOX_EMOJI) for _ in range(FOX_SEQUENCE_LEN)]
+    _fox_games[callback.from_user.id] = {"sequence": sequence, "position": 0}
+    await callback.answer()
+
+    shown = ""
+    for emoji in sequence:
+        shown += (" ➡️ " if shown else "") + emoji
+        await callback.message.edit_text(f"🦊 **Лисичка, что делаешь?**\n\nЗапоминай:\n\n{shown}", parse_mode="Markdown")
+        await asyncio.sleep(0.8)
+
+    await asyncio.sleep(0.6)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=e, callback_data=f"fox_{e}") for e in FOX_EMOJI
+    ]])
+    await callback.message.edit_text(
+        "🦊 **Лисичка, что делаешь?**\n\nА теперь повтори по порядку!",
+        reply_markup=kb, parse_mode="Markdown"
+    )
+
+
+@router.callback_query(F.data.startswith("fox_"))
+async def fox_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _fox_games.get(user_id)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    picked = callback.data.replace("fox_", "", 1)
+    expected = game["sequence"][game["position"]]
+
+    if picked != expected:
+        del _fox_games[user_id]
+        await finish_daily_game(callback, False, "🦊 **Лисичка, что делаешь?**\n\n😢 Не то! Правильная последовательность была:\n" + " ➡️ ".join(game["sequence"]))
+        return
+
+    game["position"] += 1
+    if game["position"] == len(game["sequence"]):
+        del _fox_games[user_id]
+        await finish_daily_game(callback, True, "🦊 **Лисичка, что делаешь?**\n\n🎉 Всё верно, ты повторил всю последовательность!")
+        return
+
+    await callback.answer(f"✅ Верно! Дальше... ({game['position']}/{len(game['sequence'])})")
+
+
+# ═══════════════════════════════════════════════════════════
+# ДЕНЬ 2: ЛОГИКА (найди лишнее)
+# ═══════════════════════════════════════════════════════════
+LOGIC_SETS = [
+    ["🍎", "🍌", "🍇", "🚗"],
+    ["⚽", "🏀", "🎾", "📕"],
+    ["🐶", "🐱", "🐭", "🌳"],
+    ["☀️", "🌙", "⭐", "🍕"],
+    ["🔥", "💧", "🌪️", "🎸"],
+    ["🚗", "✈️", "🚢", "🍰"],
+]
+_logic_answers = {}
+
+
+async def start_logic_game(callback: CallbackQuery):
+    items = random.choice(LOGIC_SETS)[:]
+    odd_item = items[-1]
+    random.shuffle(items)
+    _logic_answers[callback.from_user.id] = odd_item
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=e, callback_data=f"logic_{e}") for e in items
+    ]])
+    await callback.message.edit_text(
+        "🧠 **Логика**\n\nНайди лишний предмет!", reply_markup=kb, parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("logic_"))
+async def logic_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    picked = callback.data.replace("logic_", "", 1)
+    correct = _logic_answers.pop(user_id, None)
+
+    won = (picked == correct)
+    text = "🧠 **Логика**\n\n" + ("🎉 Верно, это лишнее!" if won else f"😢 Не угадал. Лишним был {correct}")
+    await finish_daily_game(callback, won, text)
+
+
+# ═══════════════════════════════════════════════════════════
+# ДЕНЬ 3: ВЗРЫВНЫЕ КРЕСТИКИ-НОЛИКИ (5x5, 4 в ряд, скрытые мины)
+# ═══════════════════════════════════════════════════════════
+_ettt_games = {}
+ETTT_SIZE = 5
+ETTT_MINES_COUNT = 3
+ETTT_WIN_LEN = 4
+
+
+def _ettt_idx(r, c):
+    return r * ETTT_SIZE + c
+
+
+def _ettt_would_win(board, idx, symbol):
+    r, c = divmod(idx, ETTT_SIZE)
+    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+    for dr, dc in directions:
+        count = 1
+        for sign in (1, -1):
+            rr, cc = r + dr * sign, c + dc * sign
+            while 0 <= rr < ETTT_SIZE and 0 <= cc < ETTT_SIZE and board[_ettt_idx(rr, cc)] == symbol:
+                count += 1
+                rr += dr * sign
+                cc += dc * sign
+        if count >= ETTT_WIN_LEN:
+            return True
+    return False
+
+
+def _ettt_line_potential(board, idx, symbol):
+    r, c = divmod(idx, ETTT_SIZE)
+    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+    total = 0
+    for dr, dc in directions:
+        count = 1
+        for sign in (1, -1):
+            rr, cc = r + dr * sign, c + dc * sign
+            while 0 <= rr < ETTT_SIZE and 0 <= cc < ETTT_SIZE and board[_ettt_idx(rr, cc)] == symbol:
+                count += 1
+                rr += dr * sign
+                cc += dc * sign
+        total += count ** 2
+    return total
+
+
+def _ettt_bot_move(board):
+    empties = [i for i, v in enumerate(board) if v is None]
+    for i in empties:
+        if _ettt_would_win(board, i, "O"):
             return i
-    for i in empties:  # 2. заблокировать игрока
-        b = board[:]; b[i] = "X"
-        if _ttt_check_winner(b) == "X":
+    for i in empties:
+        if _ettt_would_win(board, i, "X"):
             return i
-    if 4 in empties:  # 3. занять центр
-        return 4
-    return random.choice(empties)
+    scored = [(_ettt_line_potential(board, i, "O") + _ettt_line_potential(board, i, "X") * 0.8, i) for i in empties]
+    scored.sort(key=lambda t: t[0], reverse=True)
+    top = scored[:3] if len(scored) >= 3 else scored
+    return random.choice(top)[1]
 
 
-def _ttt_render_kb(board):
-    symbols = {None: "⬜", "X": "❌", "O": "⭕"}
+def _ettt_render_kb(board):
+    symbols = {None: "⬜", "X": "❌", "O": "⭕", "MINE": "💥"}
     rows = []
-    for r in range(3):
+    for r in range(ETTT_SIZE):
         row = []
-        for c in range(3):
-            i = r * 3 + c
-            cb = f"ttt_{i}" if not board[i] else "daily_noop"
+        for c in range(ETTT_SIZE):
+            i = _ettt_idx(r, c)
+            cb = f"ettt_{i}" if board[i] is None else "daily_noop"
             row.append(InlineKeyboardButton(text=symbols[board[i]], callback_data=cb))
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def start_tictactoe(callback: CallbackQuery):
-    board = [None] * 9
-    _ttt_boards[callback.from_user.id] = board
+async def start_exploding_ttt(callback: CallbackQuery, bot: Bot):
+    board = [None] * (ETTT_SIZE * ETTT_SIZE)
+    mines = set(random.sample(range(len(board)), ETTT_MINES_COUNT))
+    _ettt_games[callback.from_user.id] = {"board": board, "mines": mines}
     await callback.message.edit_text(
-        "❌⭕ **Крестики-нолики**\nТы играешь за ❌, бот - за ⭕",
-        reply_markup=_ttt_render_kb(board), parse_mode="Markdown"
+        "💥 **Взрывные крестики-нолики**\nТы - ❌, бот - ⭕. Собери 4 в ряд!\n(на поле спрятаны мины - будь осторожен)",
+        reply_markup=_ettt_render_kb(board), parse_mode="Markdown"
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("ttt_"))
-async def ttt_move(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("ettt_"))
+async def ettt_move(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
-    board = _ttt_boards.get(user_id)
-    if not board:
+    game = _ettt_games.get(user_id)
+    if not game:
         await callback.answer("Игра не найдена, начни заново", show_alert=True)
         return
 
-    idx = int(callback.data.replace("ttt_", "", 1))
-    if board[idx]:
+    board, mines = game["board"], game["mines"]
+    idx = int(callback.data.replace("ettt_", "", 1))
+    if board[idx] is not None:
         await callback.answer("Уже занято!", show_alert=True)
         return
 
-    board[idx] = "X"
-    winner = _ttt_check_winner(board)
-
-    if not winner:
-        bot_idx = _ttt_bot_move(board)
-        board[bot_idx] = "O"
-        winner = _ttt_check_winner(board)
-
-    if winner:
-        del _ttt_boards[user_id]
-        if winner == "X":
-            result_text, won = "❌⭕ **Крестики-нолики**\n\n🎉 Ты выиграл!", True
-        elif winner == "O":
-            result_text, won = "❌⭕ **Крестики-нолики**\n\n😢 Бот выиграл.", False
-        else:
-            result_text, won = "❌⭕ **Крестики-нолики**\n\n🤝 Ничья.", False
-        await finish_minigame(callback, won, result_text)
+    if idx in mines:
+        board[idx] = "MINE"
+        mines.discard(idx)
+        await callback.answer("💥 БАБАХ! Клетка взорвалась, ход сгорел.", show_alert=True)
     else:
-        await callback.message.edit_text(
-            "❌⭕ **Крестики-нолики**\nТы играешь за ❌, бот - за ⭕",
-            reply_markup=_ttt_render_kb(board), parse_mode="Markdown"
-        )
+        board[idx] = "X"
+        if _ettt_would_win(board, idx, "X"):
+            del _ettt_games[user_id]
+            await finish_daily_game(callback, True, "💥 **Взрывные крестики-нолики**\n\n🎉 Ты собрал 4 в ряд и победил!")
+            return
         await callback.answer()
 
+    if all(v is not None for v in board):
+        del _ettt_games[user_id]
+        await finish_daily_game(callback, False, "💥 **Взрывные крестики-нолики**\n\n🤝 Поле заполнено, ничья.")
+        return
+
+    # Ход бота (тоже может подорваться на мине - тогда просто теряет попытку)
+    bot_idx = _ettt_bot_move(board)
+    if bot_idx in mines:
+        board[bot_idx] = "MINE"
+        mines.discard(bot_idx)
+    else:
+        board[bot_idx] = "O"
+        if _ettt_would_win(board, bot_idx, "O"):
+            del _ettt_games[user_id]
+            await callback.message.edit_reply_markup(reply_markup=_ettt_render_kb(board))
+            await finish_daily_game_new_message(user_id, bot, False, "💥 **Взрывные крестики-нолики**\n\n😢 Бот собрал 4 в ряд.")
+            return
+
+    if all(v is not None for v in board):
+        del _ettt_games[user_id]
+        await callback.message.edit_reply_markup(reply_markup=_ettt_render_kb(board))
+        await finish_daily_game_new_message(user_id, bot, False, "💥 **Взрывные крестики-нолики**\n\n🤝 Поле заполнено, ничья.")
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=_ettt_render_kb(board))
+
 
 # ═══════════════════════════════════════════════════════════
-# ИГРА 5: НАЙДИ ПАРУ (3 пары, 6 карточек, максимум 3 попытки)
+# ДЕНЬ 4: СЛОВА (собери слово по буквам)
 # ═══════════════════════════════════════════════════════════
-_memory_games = {}
-MEMORY_EMOJIS = ["🍎", "🍌", "🍇"]
-MEMORY_MAX_ATTEMPTS = 3
+WORDS_POOL = ["ТАЙКУН", "ИМПЕРИЯ", "МОНЕТА", "АЛМАЗ", "БИЗНЕС", "ЗАВОД", "ПРИБЫЛЬ", "БОГАЧ", "ВЛАСТЬ", "ДОХОД", "КАПИТАЛ"]
+_words_games = {}
+WORDS_MAX_MISTAKES = 3
 
 
-def _memory_render_kb(game):
+def _words_render_kb(game):
+    rows, row = [], []
+    for i, letter in enumerate(game["shuffled"]):
+        text = "•" if i in game["picked"] else letter
+        cb = "daily_noop" if i in game["picked"] else f"word_{i}"
+        row.append(InlineKeyboardButton(text=text, callback_data=cb))
+        if len(row) == 5:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def start_words_game(callback: CallbackQuery):
+    target = random.choice(WORDS_POOL)
+    shuffled = list(target)
+    random.shuffle(shuffled)
+    game = {"target": target, "shuffled": shuffled, "picked": set(), "progress": 0, "mistakes": 0}
+    _words_games[callback.from_user.id] = game
+
+    text = f"📝 **Слова**\nСобери слово из {len(target)} букв по порядку!\nОшибок допустимо: {WORDS_MAX_MISTAKES}"
+    await callback.message.edit_text(text, reply_markup=_words_render_kb(game), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("word_"))
+async def words_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _words_games.get(user_id)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    i = int(callback.data.replace("word_", "", 1))
+    if i in game["picked"]:
+        await callback.answer()
+        return
+
+    letter = game["shuffled"][i]
+    expected = game["target"][game["progress"]]
+
+    if letter == expected:
+        game["picked"].add(i)
+        game["progress"] += 1
+        if game["progress"] == len(game["target"]):
+            del _words_games[user_id]
+            await finish_daily_game(callback, True, f"📝 **Слова**\n\n🎉 Собрано слово: **{game['target']}**!")
+            return
+        await callback.answer("✅ Верно!")
+    else:
+        game["mistakes"] += 1
+        if game["mistakes"] >= WORDS_MAX_MISTAKES:
+            del _words_games[user_id]
+            await finish_daily_game(callback, False, f"📝 **Слова**\n\n😢 Слишком много ошибок. Слово было: **{game['target']}**")
+            return
+        await callback.answer(f"❌ Не та буква ({game['mistakes']}/{WORDS_MAX_MISTAKES})", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        f"📝 **Слова**\nСобери слово из {len(game['target'])} букв по порядку!\nОшибок: {game['mistakes']}/{WORDS_MAX_MISTAKES}",
+        reply_markup=_words_render_kb(game), parse_mode="Markdown"
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# ДЕНЬ 5: НАЙДИ ПАРУ (5x5, с джокером-приколюхой)
+# ═══════════════════════════════════════════════════════════
+_pairs5_games = {}
+PAIRS5_EMOJIS = ["🍎", "🍌", "🍇", "🍉", "🍒", "🥝", "🍑", "🍋", "🥥", "🍍", "🥭", "🍈"]  # 12 пар
+PAIRS5_MAX_ATTEMPTS = 9
+WILDCARD = "👑"
+
+
+def _pairs5_render_kb(game):
     cards, revealed, matched = game["cards"], game["revealed"], game["matched"]
     rows, row = [], []
-    for i in range(6):
+    for i in range(25):
         text = cards[i] if (matched[i] or revealed[i]) else "❓"
-        cb = "daily_noop" if matched[i] else f"mem_{i}"
+        cb = "daily_noop" if matched[i] else f"pair5_{i}"
         row.append(InlineKeyboardButton(text=text, callback_data=cb))
-        if len(row) == 3:
+        if len(row) == 5:
             rows.append(row)
             row = []
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def start_memory(callback: CallbackQuery):
-    cards = MEMORY_EMOJIS * 2
+async def start_memory_game(callback: CallbackQuery):
+    cards = PAIRS5_EMOJIS * 2 + [WILDCARD]
     random.shuffle(cards)
-    game = {"cards": cards, "revealed": [False] * 6, "matched": [False] * 6, "first_pick": None, "attempts": 0}
-    _memory_games[callback.from_user.id] = game
+    game = {"cards": cards, "revealed": [False] * 25, "matched": [False] * 25, "first_pick": None, "attempts": 0}
+    _pairs5_games[callback.from_user.id] = game
     await callback.message.edit_text(
-        f"🃏 **Найди пару**\nУ тебя {MEMORY_MAX_ATTEMPTS} попытки, чтобы собрать все 3 пары!",
-        reply_markup=_memory_render_kb(game), parse_mode="Markdown"
+        f"🃏 **Найди пару**\n{WILDCARD} - джокер, совпадает с чем угодно!\nПопыток: {PAIRS5_MAX_ATTEMPTS}",
+        reply_markup=_pairs5_render_kb(game), parse_mode="Markdown"
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("mem_"))
-async def memory_pick(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("pair5_"))
+async def memory5_pick(callback: CallbackQuery):
     user_id = callback.from_user.id
-    game = _memory_games.get(user_id)
+    game = _pairs5_games.get(user_id)
     if not game:
         await callback.answer("Игра не найдена, начни заново", show_alert=True)
         return
 
-    idx = int(callback.data.replace("mem_", "", 1))
+    idx = int(callback.data.replace("pair5_", "", 1))
     if game["matched"][idx] or game["revealed"][idx]:
         await callback.answer()
         return
 
     if game["first_pick"] is None:
-        # Первая карта в этой попытке - просто открываем и ждём вторую
         game["revealed"][idx] = True
         game["first_pick"] = idx
-        await callback.message.edit_reply_markup(reply_markup=_memory_render_kb(game))
+        await callback.message.edit_reply_markup(reply_markup=_pairs5_render_kb(game))
         await callback.answer()
         return
 
-    # Вторая карта - показываем обе, ждём немного, потом проверяем совпадение
     first = game["first_pick"]
     game["revealed"][idx] = True
     game["attempts"] += 1
 
-    await callback.message.edit_reply_markup(reply_markup=_memory_render_kb(game))
+    await callback.message.edit_reply_markup(reply_markup=_pairs5_render_kb(game))
     await callback.answer()
     await asyncio.sleep(1.2)
 
-    if game["cards"][first] == game["cards"][idx]:
+    is_match = (game["cards"][first] == game["cards"][idx] or game["cards"][first] == WILDCARD or game["cards"][idx] == WILDCARD)
+    if is_match:
         game["matched"][first] = True
         game["matched"][idx] = True
 
@@ -483,16 +664,189 @@ async def memory_pick(callback: CallbackQuery):
     game["first_pick"] = None
 
     if all(game["matched"]):
-        del _memory_games[user_id]
-        await finish_minigame_silent(callback, True, "🃏 **Найди пару**\n\n🎉 Все пары найдены!")
+        del _pairs5_games[user_id]
+        await finish_daily_game_silent(callback, True, "🃏 **Найди пару**\n\n🎉 Все пары найдены!")
         return
 
-    if game["attempts"] >= MEMORY_MAX_ATTEMPTS:
-        del _memory_games[user_id]
-        await finish_minigame_silent(callback, False, "🃏 **Найди пару**\n\n😢 Попытки закончились.")
+    if game["attempts"] >= PAIRS5_MAX_ATTEMPTS:
+        del _pairs5_games[user_id]
+        await finish_daily_game_silent(callback, False, "🃏 **Найди пару**\n\n😢 Попытки закончились.")
         return
 
     await callback.message.edit_text(
-        f"🃏 **Найди пару**\nПопытка {game['attempts']}/{MEMORY_MAX_ATTEMPTS}",
-        reply_markup=_memory_render_kb(game), parse_mode="Markdown"
+        f"🃏 **Найди пару**\nПопытка {game['attempts']}/{PAIRS5_MAX_ATTEMPTS}",
+        reply_markup=_pairs5_render_kb(game), parse_mode="Markdown"
     )
+
+
+# ═══════════════════════════════════════════════════════════
+# ДЕНЬ 6: СОБЕРИ КАРТИНКУ ПО ПАМЯТИ (5x5, запомни узор)
+# ═══════════════════════════════════════════════════════════
+_picture_games = {}
+PICTURE_PATTERNS = [
+    # 1 = закрашенная клетка, растянуто построчно 5x5
+    [0,1,0,1,0, 1,1,1,1,1, 1,1,1,1,1, 0,1,1,1,0, 0,0,1,0,0],  # сердце
+    [0,0,1,0,0, 0,1,1,1,0, 1,1,1,1,1, 0,1,1,1,0, 0,0,1,0,0],  # ромб
+    [0,0,1,0,0, 0,0,1,0,0, 1,1,1,1,1, 0,0,1,0,0, 0,0,1,0,0],  # крест
+]
+PICTURE_MAX_MISTAKES = 3
+
+
+def _picture_render_kb(game, memorize_phase):
+    rows, row = [], []
+    for i in range(25):
+        if memorize_phase:
+            text = "🟩" if game["pattern"][i] else "⬜"
+            cb = "daily_noop"
+        else:
+            if i in game["correct_taps"]:
+                text = "✅"
+            elif i in game["wrong_taps"]:
+                text = "❌"
+            else:
+                text = "❓"
+            cb = "daily_noop" if (i in game["correct_taps"] or i in game["wrong_taps"]) else f"pic_{i}"
+        row.append(InlineKeyboardButton(text=text, callback_data=cb))
+        if len(row) == 5:
+            rows.append(row)
+            row = []
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def start_picture_game(callback: CallbackQuery):
+    pattern = random.choice(PICTURE_PATTERNS)
+    game = {"pattern": pattern, "correct_taps": set(), "wrong_taps": set(), "mistakes": 0}
+    _picture_games[callback.from_user.id] = game
+
+    await callback.message.edit_text(
+        "🎨 **Собери картинку по памяти**\n\nЗапоминай, где закрашено!",
+        reply_markup=_picture_render_kb(game, memorize_phase=True), parse_mode="Markdown"
+    )
+    await callback.answer()
+    await asyncio.sleep(4)
+
+    await callback.message.edit_text(
+        f"🎨 **Собери картинку по памяти**\n\nТеперь повтори узор! Ошибок допустимо: {PICTURE_MAX_MISTAKES}",
+        reply_markup=_picture_render_kb(game, memorize_phase=False), parse_mode="Markdown"
+    )
+
+
+@router.callback_query(F.data.startswith("pic_"))
+async def picture_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _picture_games.get(user_id)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    idx = int(callback.data.replace("pic_", "", 1))
+    if idx in game["correct_taps"] or idx in game["wrong_taps"]:
+        await callback.answer()
+        return
+
+    if game["pattern"][idx]:
+        game["correct_taps"].add(idx)
+    else:
+        game["wrong_taps"].add(idx)
+        game["mistakes"] += 1
+
+    total_filled = sum(game["pattern"])
+
+    if game["mistakes"] >= PICTURE_MAX_MISTAKES:
+        del _picture_games[user_id]
+        await finish_daily_game(callback, False, "🎨 **Собери картинку по памяти**\n\n😢 Слишком много ошибок.")
+        return
+
+    if len(game["correct_taps"]) == total_filled:
+        del _picture_games[user_id]
+        await finish_daily_game(callback, True, "🎨 **Собери картинку по памяти**\n\n🎉 Узор полностью восстановлен!")
+        return
+
+    await callback.message.edit_text(
+        f"🎨 **Собери картинку по памяти**\nОшибок: {game['mistakes']}/{PICTURE_MAX_MISTAKES}",
+        reply_markup=_picture_render_kb(game, memorize_phase=False), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+# ═══════════════════════════════════════════════════════════
+# ДЕНЬ 7: ДЕТЕКТИВ (улики -> вычисли виновного)
+# ═══════════════════════════════════════════════════════════
+_detective_games = {}
+DETECTIVE_CASES = [
+    {
+        "intro": "🔍 Из сейфа офиса пропала крупная сумма денег! Есть 4 подозреваемых.",
+        "clues": [
+            "Улика 1: преступник заходил в офис после 22:00.",
+            "Улика 2: у преступника были испачканы руки в мазуте.",
+            "Улика 3: преступник знал код от сейфа.",
+        ],
+        "suspects": ["Анна (бухгалтер)", "Виктор (охранник)", "Игорь (механик)", "Дима (курьер)"],
+        "culprit": 2,
+    },
+    {
+        "intro": "🔍 На заводе кто-то испортил станок! Есть 4 подозреваемых.",
+        "clues": [
+            "Улика 1: у преступника есть доступ к цеху ночью.",
+            "Улика 2: преступник конфликтовал с начальником на прошлой неделе.",
+            "Улика 3: на месте нашли отпечаток ботинка 44 размера.",
+        ],
+        "suspects": ["Оля (уборщица)", "Пётр (сменный мастер)", "Сергей (охранник)", "Марина (бухгалтер)"],
+        "culprit": 1,
+    },
+]
+
+
+async def start_detective_game(callback: CallbackQuery):
+    case = random.choice(DETECTIVE_CASES)
+    _detective_games[callback.from_user.id] = {"case": case, "step": 0}
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="det_next")]])
+    await callback.message.edit_text(f"🔍 **Детектив**\n\n{case['intro']}", reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "det_next")
+async def det_next(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _detective_games.get(user_id)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    case = game["case"]
+    game["step"] += 1
+    step = game["step"]
+
+    shown_clues = "\n".join(case["clues"][:step])
+
+    if step < len(case["clues"]):
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="det_next")]])
+        await callback.message.edit_text(f"🔍 **Детектив**\n\n{shown_clues}", reply_markup=kb, parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    rows = [[InlineKeyboardButton(text=name, callback_data=f"det_guess_{i}")] for i, name in enumerate(case["suspects"])]
+    text = f"🔍 **Детектив**\n\n{shown_clues}\n\nКто виновен?"
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("det_guess_"))
+async def det_guess(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _detective_games.pop(user_id, None)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    case = game["case"]
+    picked = int(callback.data.replace("det_guess_", "", 1))
+    won = (picked == case["culprit"])
+    culprit_name = case["suspects"][case["culprit"]]
+
+    text = "🔍 **Детектив**\n\n" + (
+        "🎉 Дело раскрыто! Ты вычислил виновного!" if won
+        else f"😢 Мимо. На самом деле виновен был: {culprit_name}"
+    )
+    await finish_daily_game(callback, won, text)
