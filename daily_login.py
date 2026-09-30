@@ -398,48 +398,87 @@ async def fox_play(callback: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-# ДЕНЬ 2: ЛОГИКА (найди лишнее -> больше вариантов -> числовая последовательность)
+# ДЕНЬ 2: ЛОГИКА
+# Генерируется ПРОЦЕДУРНО, а не из маленького фиксированного списка - иначе
+# при регулярной игре комбинации быстро начинают повторяться.
+#   Уровень 1/2: категория берётся из 8 пулов, лишний предмет - из ДРУГОЙ
+#                случайной категории (комбинаций сотни, категория теперь
+#                показывается явным текстом, чтобы не было путаницы).
+#   Уровень 3: числовая последовательность одного из 4 типов (арифметическая,
+#              геометрическая, квадраты, Фибоначчи) со случайными параметрами -
+#              вариантов практически бесконечно много.
 # ═══════════════════════════════════════════════════════════
 _logic_games = {}
 
-LOGIC_L1_SETS = [
-    {"category": "Фрукты", "items": ["🍎", "🍌", "🍇"], "odd": "🚗"},
-    {"category": "Спорт", "items": ["⚽", "🏀", "🎾"], "odd": "📕"},
-    {"category": "Животные", "items": ["🐶", "🐱", "🐭"], "odd": "🌳"},
-]
-LOGIC_L2_SETS = [
-    {"category": "Небесные тела и явления", "items": ["☀️", "🌙", "⭐", "☁️", "🌈"], "odd": "🍕"},
-    {"category": "Транспорт", "items": ["🚗", "✈️", "🚢", "🚂", "🚲"], "odd": "🍰"},
-]
-LOGIC_L3_SEQUENCES = [
-    {"seq": [2, 4, 6, 8], "answer": 10, "options": [9, 10, 11, 12]},
-    {"seq": [1, 2, 4, 8], "answer": 16, "options": [12, 14, 16, 18]},
-    {"seq": [1, 4, 9, 16], "answer": 25, "options": [20, 22, 24, 25]},
-    {"seq": [3, 6, 9, 12], "answer": 15, "options": [13, 14, 15, 16]},
-]
+LOGIC_CATEGORIES = {
+    "Фрукты": ["🍎", "🍌", "🍇", "🍉", "🍒", "🥝", "🍑", "🍋"],
+    "Спорт": ["⚽", "🏀", "🎾", "🏐", "🏈", "🎳", "🏓", "⛳"],
+    "Животные": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
+    "Транспорт": ["🚗", "✈️", "🚢", "🚂", "🚲", "🛵", "🚁", "🚀"],
+    "Небесные явления": ["☀️", "🌙", "⭐", "☁️", "🌈", "⚡", "🌪️", "❄️"],
+    "Еда": ["🍕", "🍔", "🌭", "🍟", "🍰", "🍩", "🍦", "🍫"],
+    "Инструменты": ["🔨", "🔧", "🪓", "🪚", "🔩", "⚙️", "🪛", "🧲"],
+    "Музыкальные инструменты": ["🎸", "🎹", "🥁", "🎺", "🎻", "🪕", "🎷", "🎤"],
+}
+
+
+def _gen_logic_odd_one_out(n_items):
+    cat_name, cat_pool = random.choice(list(LOGIC_CATEGORIES.items()))
+    items = random.sample(cat_pool, n_items)
+    odd_cat_name = random.choice([c for c in LOGIC_CATEGORIES if c != cat_name])
+    odd_item = random.choice(LOGIC_CATEGORIES[odd_cat_name])
+    options = items + [odd_item]
+    random.shuffle(options)
+    correct_index = options.index(odd_item)
+    text = f"Категория: **{cat_name}**\nНайди лишний предмет!"
+    return options, correct_index, text
+
+
+def _gen_logic_sequence():
+    kind = random.choice(["arith", "geom", "square", "fib"])
+    if kind == "arith":
+        start, step = random.randint(1, 10), random.randint(2, 9)
+        seq = [start + step * i for i in range(4)]
+        answer = start + step * 4
+    elif kind == "geom":
+        start, ratio = random.randint(1, 3), random.randint(2, 3)
+        seq = [start * (ratio ** i) for i in range(4)]
+        answer = start * (ratio ** 4)
+    elif kind == "square":
+        offset = random.randint(0, 3)
+        seq = [(offset + i) ** 2 for i in range(1, 5)]
+        answer = (offset + 5) ** 2
+    else:
+        a, b = random.randint(1, 5), random.randint(1, 5)
+        seq = [a, b]
+        for _ in range(2):
+            seq.append(seq[-1] + seq[-2])
+        answer = seq[-1] + seq[-2]
+
+    wrong = set()
+    while len(wrong) < 3:
+        delta = random.choice([-3, -2, -1, 1, 2, 3])
+        candidate = answer + delta
+        if candidate > 0 and candidate != answer:
+            wrong.add(candidate)
+    options = [answer] + list(wrong)
+    random.shuffle(options)
+    correct_index = options.index(answer)
+    seq_str = ", ".join(str(x) for x in seq)
+    text = f"Продолжи последовательность:\n**{seq_str}, ?**"
+    return [str(o) for o in options], correct_index, text
 
 
 async def start_logic_game(callback: CallbackQuery, level: int = 1):
     if level == 1:
-        data = random.choice(LOGIC_L1_SETS)
-        options = data["items"] + [data["odd"]]
-        random.shuffle(options)
-        correct_index = options.index(data["odd"])
-        text = f"🧠 **Логика** ({LEVEL_NAMES[level]})\n\nКатегория: **{data['category']}**\nНайди лишний предмет!"
+        options, correct_index, subtext = _gen_logic_odd_one_out(3)
     elif level == 2:
-        data = random.choice(LOGIC_L2_SETS)
-        options = data["items"] + [data["odd"]]
-        random.shuffle(options)
-        correct_index = options.index(data["odd"])
-        text = f"🧠 **Логика** ({LEVEL_NAMES[level]})\n\nКатегория: **{data['category']}**\nНайди лишний предмет!"
+        options, correct_index, subtext = _gen_logic_odd_one_out(5)
     else:
-        data = random.choice(LOGIC_L3_SEQUENCES)
-        options = [str(o) for o in data["options"]]
-        correct_index = data["options"].index(data["answer"])
-        seq_str = ", ".join(str(x) for x in data["seq"])
-        text = f"🧠 **Логика** ({LEVEL_NAMES[level]})\n\nПродолжи последовательность:\n{seq_str}, ?"
+        options, correct_index, subtext = _gen_logic_sequence()
 
     _logic_games[callback.from_user.id] = {"level": level, "correct_index": correct_index}
+    text = f"🧠 **Логика** ({LEVEL_NAMES[level]})\n\n{subtext}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=opt, callback_data=f"logic_ans_{i}") for i, opt in enumerate(options)
     ]])
@@ -466,9 +505,9 @@ async def logic_play(callback: CallbackQuery):
 # ═══════════════════════════════════════════════════════════
 _ettt_games = {}
 ETTT_LEVELS = {
-    1: {"size": 3, "win_len": 3, "mines": 0, "strength": "weak"},
-    2: {"size": 4, "win_len": 3, "mines": 1, "strength": "medium"},
-    3: {"size": 5, "win_len": 4, "mines": 3, "strength": "strong"},
+    1: {"size": 3, "win_len": 3, "mines": 0, "strength": "weak", "think_delay": 0.5},
+    2: {"size": 4, "win_len": 3, "mines": 1, "strength": "medium", "think_delay": 0.9},
+    3: {"size": 5, "win_len": 4, "mines": 3, "strength": "strong", "think_delay": 1.4},
 }
 
 
@@ -602,6 +641,13 @@ async def ettt_move(callback: CallbackQuery, bot: Bot):
         await _game_round_end(callback, 3, level, False, "💥 **Взрывные крестики-нолики**\n\n🤝 Поле заполнено, ничья.", answered=True)
         return
 
+    # Бот "думает" - пауза растёт со сложностью, чтобы чувствовался вес хода
+    await callback.message.edit_text(
+        f"💥 **Взрывные крестики-нолики** ({LEVEL_NAMES[level]})\n🤔 Бот думает...",
+        reply_markup=_ettt_render_kb(board, size), parse_mode="Markdown"
+    )
+    await asyncio.sleep(cfg["think_delay"])
+
     bot_idx = _ettt_bot_move(board, size, win_len, strength)
     if bot_idx in mines:
         board[bot_idx] = "MINE"
@@ -638,9 +684,13 @@ WORDS_LEVEL_CFG = {1: {"pool": WORDS_L1, "decoys": 0, "reshuffle": False},
 
 
 def _words_render_kb(game):
+    """Буквы НЕ пропадают из раскладки при правильном тапе - на их месте
+    остаётся точка (•), позиции остальных букв не сдвигаются."""
     rows, row = [], []
-    for i, letter in enumerate(game["remaining"]):
-        row.append(InlineKeyboardButton(text=letter, callback_data=f"word_{i}"))
+    for i, letter in enumerate(game["letters"]):
+        text = "•" if i in game["picked"] else letter
+        cb = "daily_noop" if i in game["picked"] else f"word_{i}"
+        row.append(InlineKeyboardButton(text=text, callback_data=cb))
         if len(row) == 5:
             rows.append(row)
             row = []
@@ -657,7 +707,7 @@ async def start_words_game(callback: CallbackQuery, level: int = 1):
     letters += random.sample(decoy_choices, min(cfg["decoys"], len(decoy_choices)))
     random.shuffle(letters)
 
-    game = {"target": target, "remaining": letters, "progress": 0, "mistakes": 0, "level": level, "reshuffle": cfg["reshuffle"]}
+    game = {"target": target, "letters": letters, "picked": set(), "progress": 0, "mistakes": 0, "level": level, "reshuffle": cfg["reshuffle"]}
     _words_games[callback.from_user.id] = game
 
     text = f"📝 **Слова** ({LEVEL_NAMES[level]})\nСобери слово из {len(target)} букв по порядку!\nОшибок допустимо: {WORDS_MAX_MISTAKES}"
@@ -674,18 +724,24 @@ async def words_play(callback: CallbackQuery):
         return
 
     i = int(callback.data.replace("word_", "", 1))
-    if i >= len(game["remaining"]):
+    if i in game["picked"]:
         await callback.answer()
         return
 
-    letter = game["remaining"][i]
+    letter = game["letters"][i]
     expected = game["target"][game["progress"]]
 
     if letter == expected:
-        game["remaining"].pop(i)
+        game["picked"].add(i)
         game["progress"] += 1
         if game["reshuffle"]:
-            random.shuffle(game["remaining"])
+            # На сложном уровне буквы на ЕЩЁ НЕ угаданных позициях перемешиваются
+            # заново между собой (сами позиции с точками не трогаем)
+            free_positions = [j for j in range(len(game["letters"])) if j not in game["picked"]]
+            free_letters = [game["letters"][j] for j in free_positions]
+            random.shuffle(free_letters)
+            for pos, letter_val in zip(free_positions, free_letters):
+                game["letters"][pos] = letter_val
         if game["progress"] == len(game["target"]):
             del _words_games[user_id]
             await _game_round_end(callback, 4, game["level"], True, f"📝 **Слова**\n\n🎉 Собрано слово: **{game['target']}**!")
@@ -741,7 +797,7 @@ async def start_memory_game(callback: CallbackQuery, level: int = 1):
     }
     _pairs_games[callback.from_user.id] = game
     await callback.message.edit_text(
-        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\n{WILDCARD} - джокер, совпадает с чем угодно!\nПопыток: {cfg['attempts']}",
+        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\n{WILDCARD} - джокер, совпадает с чем угодно!\nДопустимо ошибок: {cfg['attempts']} (совпадения бесплатны)",
         reply_markup=_pairs_render_kb(game), parse_mode="Markdown"
     )
     await callback.answer()
@@ -769,7 +825,6 @@ async def memory_pick(callback: CallbackQuery):
 
     first = game["first_pick"]
     game["revealed"][idx] = True
-    game["attempts"] += 1
 
     await callback.message.edit_reply_markup(reply_markup=_pairs_render_kb(game))
     await callback.answer()
@@ -779,6 +834,9 @@ async def memory_pick(callback: CallbackQuery):
     if is_match:
         game["matched"][first] = True
         game["matched"][idx] = True
+    else:
+        # Попытка тратится ТОЛЬКО при ошибке - угаданные пары бесплатны
+        game["attempts"] += 1
 
     game["revealed"][first] = False
     game["revealed"][idx] = False
@@ -795,48 +853,51 @@ async def memory_pick(callback: CallbackQuery):
         return
 
     await callback.message.edit_text(
-        f"🃏 **Найди пару** ({LEVEL_NAMES[game['level']]})\nПопытка {game['attempts']}/{game['max_attempts']}",
+        f"🃏 **Найди пару** ({LEVEL_NAMES[game['level']]})\nОшибок: {game['attempts']}/{game['max_attempts']}",
         reply_markup=_pairs_render_kb(game), parse_mode="Markdown"
     )
 
 
 # ═══════════════════════════════════════════════════════════
-# ДЕНЬ 6: СОБЕРИ КАРТИНКУ ПО ПАМЯТИ (поле растёт, времени меньше)
+# ДЕНЬ 6: СОБЕРИ КАРТИНКУ ПО ПАМЯТИ
+# Переделано в пространственную "Саймон говорит": клетки загораются ПО ОДНОЙ
+# в определённом порядке, игрок должен повторить ИМЕННО В ТОМ ЖЕ ПОРЯДКЕ
+# (не просто найти все закрашенные - порядок имеет значение, это сильно
+# сложнее старой версии и не решается случайным перебором).
 # ═══════════════════════════════════════════════════════════
 _picture_games = {}
-PICTURE_LEVEL_CFG = {1: {"size": 4, "mistakes": 3, "memorize": 5}, 2: {"size": 5, "mistakes": 3, "memorize": 4}, 3: {"size": 6, "mistakes": 4, "memorize": 3}}
+PICTURE_LEVEL_CFG = {
+    1: {"size": 4, "seq_len": 4, "delay": 0.7},
+    2: {"size": 5, "seq_len": 6, "delay": 0.55},
+    3: {"size": 6, "seq_len": 8, "delay": 0.4},
+}
 
 
-def _pattern_diamond(size):
-    center = (size - 1) / 2
-    radius = size / 2 - 0.4
-    return [1 if abs(r - center) + abs(c - center) <= radius else 0 for r in range(size) for c in range(size)]
-
-
-def _pattern_cross(size):
-    mid = size // 2
-    mid2 = mid - 1 if size % 2 == 0 else mid
-    return [1 if (r in (mid, mid2) or c in (mid, mid2)) else 0 for r in range(size) for c in range(size)]
-
-
-def _pattern_ring(size):
-    return [1 if (r == 0 or r == size - 1 or c == 0 or c == size - 1) else 0 for r in range(size) for c in range(size)]
-
-
-def _picture_render_kb(game, memorize_phase):
-    size = game["size"]
+def _picture_render_kb(size, done_count, highlight_idx=None):
+    """done_count клеток уже правильно повторены (показываем их как ✅,
+    остальные как ❓); highlight_idx - клетка, которая сейчас "горит" во
+    время фазы показа последовательности."""
     rows, row = [], []
     for i in range(size * size):
-        if memorize_phase:
-            text, cb = ("🟩" if game["pattern"][i] else "⬜"), "daily_noop"
+        if highlight_idx is not None and i == highlight_idx:
+            text, cb = "🟩", "daily_noop"
         else:
-            if i in game["correct_taps"]:
-                text = "✅"
-            elif i in game["wrong_taps"]:
-                text = "❌"
-            else:
-                text = "❓"
-            cb = "daily_noop" if (i in game["correct_taps"] or i in game["wrong_taps"]) else f"pic_{i}"
+            text, cb = "❓", f"pic_{i}"
+        row.append(InlineKeyboardButton(text=text, callback_data=cb))
+        if len(row) == size:
+            rows.append(row)
+            row = []
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _picture_render_progress_kb(size, sequence, position):
+    """Клавиатура на этапе повтора: уже верно нажатые (по порядку) клетки
+    отмечены ✅, остальные - как обычные кликабельные ❓."""
+    done = set(sequence[:position])
+    rows, row = [], []
+    for i in range(size * size):
+        text = "✅" if i in done else "❓"
+        cb = "daily_noop" if i in done else f"pic_{i}"
         row.append(InlineKeyboardButton(text=text, callback_data=cb))
         if len(row) == size:
             rows.append(row)
@@ -847,20 +908,23 @@ def _picture_render_kb(game, memorize_phase):
 async def start_picture_game(callback: CallbackQuery, level: int = 1):
     cfg = PICTURE_LEVEL_CFG[level]
     size = cfg["size"]
-    pattern = random.choice([_pattern_diamond(size), _pattern_cross(size), _pattern_ring(size)])
-    game = {"pattern": pattern, "size": size, "correct_taps": set(), "wrong_taps": set(), "mistakes": 0, "level": level, "max_mistakes": cfg["mistakes"]}
-    _picture_games[callback.from_user.id] = game
-
-    await callback.message.edit_text(
-        f"🎨 **Собери картинку по памяти** ({LEVEL_NAMES[level]})\n\nЗапоминай, где закрашено!",
-        reply_markup=_picture_render_kb(game, memorize_phase=True), parse_mode="Markdown"
-    )
+    total = size * size
+    sequence = random.sample(range(total), cfg["seq_len"])  # уникальные позиции без повторов
+    _picture_games[callback.from_user.id] = {"size": size, "sequence": sequence, "position": 0, "level": level}
     await callback.answer()
-    await asyncio.sleep(cfg["memorize"])
 
+    for step, idx in enumerate(sequence):
+        kb = _picture_render_kb(size, step, highlight_idx=idx)
+        await callback.message.edit_text(
+            f"🎨 **Собери картинку по памяти** ({LEVEL_NAMES[level]})\nЗапоминай порядок! ({step + 1}/{len(sequence)})",
+            reply_markup=kb, parse_mode="Markdown"
+        )
+        await asyncio.sleep(cfg["delay"])
+
+    kb = _picture_render_progress_kb(size, sequence, 0)
     await callback.message.edit_text(
-        f"🎨 **Собери картинку по памяти** ({LEVEL_NAMES[level]})\n\nТеперь повтори узор! Ошибок допустимо: {cfg['mistakes']}",
-        reply_markup=_picture_render_kb(game, memorize_phase=False), parse_mode="Markdown"
+        f"🎨 **Собери картинку по памяти** ({LEVEL_NAMES[level]})\nА теперь повтори в ТОМ ЖЕ порядке!",
+        reply_markup=kb, parse_mode="Markdown"
     )
 
 
@@ -873,91 +937,102 @@ async def picture_play(callback: CallbackQuery):
         return
 
     idx = int(callback.data.replace("pic_", "", 1))
-    if idx in game["correct_taps"] or idx in game["wrong_taps"]:
-        await callback.answer()
-        return
+    expected = game["sequence"][game["position"]]
 
-    if game["pattern"][idx]:
-        game["correct_taps"].add(idx)
-    else:
-        game["wrong_taps"].add(idx)
-        game["mistakes"] += 1
-
-    total_filled = sum(game["pattern"])
-
-    if game["mistakes"] >= game["max_mistakes"]:
+    if idx != expected:
         del _picture_games[user_id]
-        await _game_round_end(callback, 6, game["level"], False, "🎨 **Собери картинку по памяти**\n\n😢 Слишком много ошибок.")
+        order_str = " → ".join(str(n) for n in game["sequence"])
+        await _game_round_end(callback, 6, game["level"], False, f"🎨 **Собери картинку по памяти**\n\n😢 Не тот порядок! Правильная последовательность клеток была: {order_str}")
         return
 
-    if len(game["correct_taps"]) == total_filled:
+    game["position"] += 1
+    if game["position"] == len(game["sequence"]):
         del _picture_games[user_id]
-        await _game_round_end(callback, 6, game["level"], True, "🎨 **Собери картинку по памяти**\n\n🎉 Узор полностью восстановлен!")
+        await _game_round_end(callback, 6, game["level"], True, "🎨 **Собери картинку по памяти**\n\n🎉 Весь порядок повторён без ошибок!")
         return
 
-    await callback.message.edit_text(
-        f"🎨 **Собери картинку по памяти** ({LEVEL_NAMES[game['level']]})\nОшибок: {game['mistakes']}/{game['max_mistakes']}",
-        reply_markup=_picture_render_kb(game, memorize_phase=False), parse_mode="Markdown"
-    )
-    await callback.answer()
+    kb = _picture_render_progress_kb(game["size"], game["sequence"], game["position"])
+    await callback.message.edit_reply_markup(reply_markup=kb)
+    await callback.answer(f"✅ Верно! ({game['position']}/{len(game['sequence'])})")
 
 
 # ═══════════════════════════════════════════════════════════
-# ДЕНЬ 7: ДЕТЕКТИВ (3 подозреваемых -> 4 -> 5, улик больше)
+# ДЕНЬ 7: ДЕТЕКТИВ
+# Полностью процедурная генерация (сценарий + имена + признаки собираются
+# случайно из больших пулов - реальных уникальных комбинаций тысячи, не
+# повторится за месяцы игры), и вместо угадайки с одного тыка теперь
+# настоящая интерактивная дедукция: ошибся - тебе называют, какой именно
+# улике не соответствовал этот подозреваемый, он выбывает, и есть
+# ограниченное число попыток (нельзя просто перебрать всех подряд).
 # ═══════════════════════════════════════════════════════════
 _detective_games = {}
-DETECTIVE_CASES = {
-    1: [{
-        "intro": "🔍 Пропал кошелёк в кафе! Есть 3 подозреваемых.",
-        "clues": ["Улика 1: преступник сидел за столиком у окна.", "Улика 2: у преступника была синяя куртка."],
-        "suspects": ["Настя (не у окна, синяя куртка)", "Олег (у окна, синяя куртка)", "Ира (у окна, красная куртка)"],
-        "culprit": 1,
-    }],
-    2: [
-        {
-            "intro": "🔍 Из сейфа офиса пропала крупная сумма денег! Есть 4 подозреваемых.",
-            "clues": [
-                "Улика 1: преступник заходил в офис после 22:00.",
-                "Улика 2: у преступника были испачканы руки в мазуте.",
-                "Улика 3: преступник знал код от сейфа.",
-            ],
-            "suspects": ["Анна (бухгалтер)", "Виктор (охранник)", "Игорь (механик)", "Дима (курьер)"],
-            "culprit": 2,
-        },
-        {
-            "intro": "🔍 На заводе кто-то испортил станок! Есть 4 подозреваемых.",
-            "clues": [
-                "Улика 1: у преступника есть доступ к цеху ночью.",
-                "Улика 2: преступник конфликтовал с начальником на прошлой неделе.",
-                "Улика 3: на месте нашли отпечаток ботинка 44 размера.",
-            ],
-            "suspects": ["Оля (уборщица)", "Пётр (сменный мастер)", "Сергей (охранник)", "Марина (бухгалтер)"],
-            "culprit": 1,
-        },
-    ],
-    3: [{
-        "intro": "🔍 Со склада пропала партия товара! Есть 5 подозреваемых.",
-        "clues": [
-            "Улика 1: у преступника есть доступ к складу ночью.",
-            "Улика 2: преступник был на работе в день кражи.",
-            "Улика 3: рост преступника выше 180 см.",
-            "Улика 4: преступник умеет пользоваться отмычкой.",
-        ],
-        "suspects": [
-            "Игорь (доступ есть, был на работе, рост 175, отмычкой не владеет)",
-            "Соня (доступа к складу нет)",
-            "Борис (доступ есть, в тот день не работал)",
-            "Клим (доступ есть, был на работе, рост 185, владеет отмычкой)",
-            "Вера (доступ есть, была на работе, рост 190, отмычкой не владеет)",
-        ],
-        "culprit": 3,
-    }],
-}
+
+DETECTIVE_DIMENSIONS = [
+    {"clue": "у преступника есть доступ к месту преступления ночью", "true": "есть доступ ночью", "false": "доступа ночью нет"},
+    {"clue": "преступник был на месте в день происшествия", "true": "был на месте в тот день", "false": "в тот день там не был"},
+    {"clue": "рост преступника выше 180 см", "true": "рост выше 180 см", "false": "рост обычный"},
+    {"clue": "преступник умеет пользоваться отмычкой", "true": "умеет вскрывать замки", "false": "не умеет вскрывать замки"},
+    {"clue": "преступник конфликтовал с начальством", "true": "конфликтовал с начальством", "false": "конфликтов не было"},
+    {"clue": "у преступника нет алиби на вечер происшествия", "true": "алиби нет", "false": "есть алиби"},
+    {"clue": "преступник знал секретный код доступа", "true": "знал код доступа", "false": "код не знал"},
+    {"clue": "у преступника были испачканы руки", "true": "руки испачканы", "false": "руки чистые"},
+    {"clue": "преступник недавно брал отгул", "true": "недавно брал отгул", "false": "отгулов не брал"},
+    {"clue": "у преступника есть судимость", "true": "есть судимость", "false": "судимости нет"},
+]
+DETECTIVE_SCENARIOS = [
+    "🔍 Из сейфа офиса пропала крупная сумма денег!",
+    "🔍 На заводе кто-то испортил дорогой станок!",
+    "🔍 Пропал редкий экспонат из музея!",
+    "🔍 Со склада исчезла партия товара!",
+    "🔍 Из кассы магазина пропала выручка!",
+    "🔍 Кто-то взломал сервер компании!",
+    "🔍 В гараже кто-то повредил служебную машину!",
+    "🔍 Из архива пропали важные документы!",
+]
+DETECTIVE_NAMES = [
+    "Анна (бухгалтер)", "Виктор (охранник)", "Игорь (механик)", "Дима (курьер)",
+    "Оля (уборщица)", "Пётр (мастер)", "Сергей (сторож)", "Марина (кассир)",
+    "Настя (стажёр)", "Олег (инженер)", "Ира (менеджер)", "Клим (техник)",
+    "Вера (секретарь)", "Борис (грузчик)", "Соня (продавец)", "Артём (водитель)",
+]
+DETECTIVE_LEVEL_CFG = {1: {"suspects": 3, "clues": 2, "max_wrong": 1}, 2: {"suspects": 4, "clues": 3, "max_wrong": 2}, 3: {"suspects": 5, "clues": 4, "max_wrong": 2}}
+
+
+def _gen_detective_case(level):
+    cfg = DETECTIVE_LEVEL_CFG[level]
+    dims = random.sample(DETECTIVE_DIMENSIONS, cfg["clues"])
+    names = random.sample(DETECTIVE_NAMES, cfg["suspects"])
+    scenario = random.choice(DETECTIVE_SCENARIOS)
+
+    traits = [[random.random() < 0.5 for _ in dims] for _ in names]
+    culprit_idx = random.randrange(len(names))
+    traits[culprit_idx] = [True] * len(dims)
+
+    # Гарантируем, что виновный - единственный, кто подходит под ВСЕ улики
+    for i in range(len(names)):
+        if i == culprit_idx:
+            continue
+        if all(traits[i]):
+            traits[i][random.randrange(len(dims))] = False
+
+    suspects = []
+    fail_reason = []  # для каждого не-виновного - индекс первой улики, которой он не соответствует
+    for i, name in enumerate(names):
+        desc = ", ".join(dims[d]["true"] if traits[i][d] else dims[d]["false"] for d in range(len(dims)))
+        suspects.append(f"{name}: {desc}")
+        first_fail = next((d for d in range(len(dims)) if not traits[i][d]), None)
+        fail_reason.append(first_fail)
+
+    clues = [f"Улика {i + 1}: {dims[i]['clue']}." for i in range(len(dims))]
+    return {
+        "intro": scenario, "clues": clues, "suspects": suspects,
+        "culprit": culprit_idx, "fail_reason": fail_reason, "max_wrong": cfg["max_wrong"],
+    }
 
 
 async def start_detective_game(callback: CallbackQuery, level: int = 1):
-    case = random.choice(DETECTIVE_CASES[level])
-    _detective_games[callback.from_user.id] = {"case": case, "step": 0, "level": level}
+    case = _gen_detective_case(level)
+    _detective_games[callback.from_user.id] = {"case": case, "step": 0, "level": level, "wrong": 0, "eliminated": set()}
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="det_next")]])
     await callback.message.edit_text(f"🔍 **Детектив** ({LEVEL_NAMES[level]})\n\n{case['intro']}", reply_markup=kb, parse_mode="Markdown")
@@ -983,8 +1058,17 @@ async def det_next(callback: CallbackQuery):
         await callback.answer()
         return
 
-    rows = [[InlineKeyboardButton(text=name, callback_data=f"det_guess_{i}")] for i, name in enumerate(case["suspects"])]
-    text = f"🔍 **Детектив**\n\n{shown_clues}\n\nКто виновен?"
+    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{shown_clues}\n\nКого обвинишь?")
+
+
+async def _detective_show_suspects(callback: CallbackQuery, game, header_text: str):
+    case = game["case"]
+    rows = [
+        [InlineKeyboardButton(text=name, callback_data=f"det_guess_{i}")]
+        for i, name in enumerate(case["suspects"]) if i not in game["eliminated"]
+    ]
+    wrong_left = case["max_wrong"] - game["wrong"]
+    text = header_text + f"\n\n❗ Неверных обвинений в запасе: {wrong_left}"
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="Markdown")
     await callback.answer()
 
@@ -992,18 +1076,33 @@ async def det_next(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("det_guess_"))
 async def det_guess(callback: CallbackQuery):
     user_id = callback.from_user.id
-    game = _detective_games.pop(user_id, None)
+    game = _detective_games.get(user_id)
     if not game:
         await callback.answer("Игра не найдена, начни заново", show_alert=True)
         return
 
     case = game["case"]
     picked = int(callback.data.replace("det_guess_", "", 1))
-    won = (picked == case["culprit"])
-    culprit_name = case["suspects"][case["culprit"]]
 
-    text = "🔍 **Детектив**\n\n" + (
-        "🎉 Дело раскрыто! Ты вычислил виновного!" if won
-        else f"😢 Мимо. На самом деле виновен был: {culprit_name}"
-    )
-    await _game_round_end(callback, 7, game["level"], won, text)
+    if picked == case["culprit"]:
+        del _detective_games[user_id]
+        await _game_round_end(callback, 7, game["level"], True, "🔍 **Детектив**\n\n🎉 Дело раскрыто! Ты вычислил виновного!")
+        return
+
+    game["wrong"] += 1
+    game["eliminated"].add(picked)
+    fail_dim = case["fail_reason"][picked]
+    suspect_name = case["suspects"][picked].split(":")[0]
+
+    if fail_dim is not None:
+        reason = f"❌ {suspect_name} не подходит: не совпадает Улика {fail_dim + 1}."
+    else:
+        reason = f"❌ {suspect_name} невиновен."
+
+    if game["wrong"] > case["max_wrong"]:
+        del _detective_games[user_id]
+        culprit_name = case["suspects"][case["culprit"]].split(":")[0]
+        await _game_round_end(callback, 7, game["level"], False, f"🔍 **Детектив**\n\n{reason}\n\n😢 Попытки закончились. Виновен был: {culprit_name}")
+        return
+
+    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{reason}\n\nПопробуй ещё раз - кого обвинишь?")
