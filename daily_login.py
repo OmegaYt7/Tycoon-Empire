@@ -129,7 +129,6 @@ async def daily_menu(message: Message):
         return
 
     claimed_today, current_day, _, game_played = _get_streak_state(user)
-    game_name = DAY_GAME_NAMES[current_day]
     is_admin = admin_panel.is_admin(user_id)
 
     if is_admin:
@@ -137,12 +136,12 @@ async def daily_menu(message: Message):
     elif claimed_today and game_played:
         text = "🎁 **Ежедневная награда**\n\nСегодня всё забрано и сыграно - возвращайся завтра!"
     elif claimed_today and not game_played:
-        text = f"🎁 **Ежедневная награда**\n\nНаграда за День {current_day} уже получена!\nОсталось сыграть: {game_name}"
+        text = f"🎁 **Ежедневная награда**\n\nНаграда за День {current_day} уже получена!\n🎮 Осталось сыграть загадочную игру дня - жми и узнаешь!"
     else:
         text = (
             f"🎁 **Ежедневная награда**\n\n"
             f"Собери награду за День {current_day} из 7!\n"
-            f"Сегодняшняя игра: {game_name}\n"
+            f"🎮 Какая сегодня игра - секрет, узнаешь после получения награды!\n"
             f"Пропустишь день - серия начнётся заново."
         )
 
@@ -192,15 +191,14 @@ async def daily_claim(callback: CallbackQuery):
     _level_progress.pop(user_id, None)
 
     coins_str = f"{reward_coins:,}".replace(",", " ")
-    game_name = DAY_GAME_NAMES[current_day]
     text = (
         f"✅ **День {current_day} получен!**\n\n"
         f"💰 +{coins_str} монет{bonus_text}\n\n"
-        f"Сегодняшняя игра: {game_name}\n"
+        f"🎮 Сегодня тебя ждёт загадочная игра - жми и узнаешь какая!\n"
         f"3 уровня сложности - чем дальше пройдёшь, тем больше бонус!"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"▶️ Играть: {game_name}", callback_data="daily_playday")]
+        [InlineKeyboardButton(text="▶️ Играть (сюрприз!)", callback_data="daily_playday")]
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     await callback.answer()
