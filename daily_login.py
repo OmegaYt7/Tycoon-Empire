@@ -397,38 +397,45 @@ async def fox_play(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 # ДЕНЬ 2: ЛОГИКА
-# Генерируется ПРОЦЕДУРНО, а не из маленького фиксированного списка - иначе
-# при регулярной игре комбинации быстро начинают повторяться.
-#   Уровень 1/2: категория берётся из 8 пулов, лишний предмет - из ДРУГОЙ
-#                случайной категории (комбинаций сотни, категория теперь
-#                показывается явным текстом, чтобы не было путаницы).
+# Генерируется ПРОЦЕДУРНО - вариантов тысячи, не повторится месяцами.
+#   Уровень 1/2: НАСТОЯЩАЯ логическая задача на транзитивность - дана цепочка
+#                сравнений ("А тяжелее Б, Б тяжелее В"), нужно сделать вывод,
+#                кто самый/самый. На уровне 2 утверждения даются вперемешку
+#                (не по порядку) - нужно самому выстроить цепочку в уме.
 #   Уровень 3: числовая последовательность одного из 4 типов (арифметическая,
-#              геометрическая, квадраты, Фибоначчи) со случайными параметрами -
-#              вариантов практически бесконечно много.
+#              геометрическая, квадраты, Фибоначчи) со случайными параметрами.
 # ═══════════════════════════════════════════════════════════
 _logic_games = {}
 
-LOGIC_CATEGORIES = {
-    "Фрукты": ["🍎", "🍌", "🍇", "🍉", "🍒", "🥝", "🍑", "🍋"],
-    "Спорт": ["⚽", "🏀", "🎾", "🏐", "🏈", "🎳", "🏓", "⛳"],
-    "Животные": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
-    "Транспорт": ["🚗", "✈️", "🚢", "🚂", "🚲", "🛵", "🚁", "🚀"],
-    "Небесные явления": ["☀️", "🌙", "⭐", "☁️", "🌈", "⚡", "🌪️", "❄️"],
-    "Еда": ["🍕", "🍔", "🌭", "🍟", "🍰", "🍩", "🍦", "🍫"],
-    "Инструменты": ["🔨", "🔧", "🪓", "🪚", "🔩", "⚙️", "🪛", "🧲"],
-    "Музыкальные инструменты": ["🎸", "🎹", "🥁", "🎺", "🎻", "🪕", "🎷", "🎤"],
-}
+LOGIC_NAMES = ["Антон", "Борис", "Вика", "Галя", "Денис", "Елена", "Женя", "Иван", "Катя", "Лена", "Миша", "Настя", "Олег", "Паша", "Рита", "Саша"]
+LOGIC_RELATIONS = [
+    {"more": "тяжелее", "max_q": "самый тяжёлый", "min_q": "самый лёгкий"},
+    {"more": "выше", "max_q": "самый высокий", "min_q": "самый низкий"},
+    {"more": "старше", "max_q": "самый старший", "min_q": "самый младший"},
+    {"more": "быстрее", "max_q": "самый быстрый", "min_q": "самый медленный"},
+    {"more": "богаче", "max_q": "самый богатый", "min_q": "самый бедный"},
+    {"more": "сильнее", "max_q": "самый сильный", "min_q": "самый слабый"},
+]
 
 
-def _gen_logic_odd_one_out(n_items):
-    cat_name, cat_pool = random.choice(list(LOGIC_CATEGORIES.items()))
-    items = random.sample(cat_pool, n_items)
-    odd_cat_name = random.choice([c for c in LOGIC_CATEGORIES if c != cat_name])
-    odd_item = random.choice(LOGIC_CATEGORIES[odd_cat_name])
-    options = items + [odd_item]
+def _gen_logic_order_riddle(n_people, shuffle_statements):
+    rel = random.choice(LOGIC_RELATIONS)
+    names = random.sample(LOGIC_NAMES, n_people)
+    # names[0] - "больше всех" по выбранному признаку, names[-1] - "меньше всех"
+    statements = [f"{names[i]} {rel['more']} {names[i + 1]}" for i in range(n_people - 1)]
+    order = statements[:]
+    if shuffle_statements:
+        random.shuffle(order)
+
+    ask_min = random.random() < 0.5
+    answer, question = (names[-1], rel["min_q"]) if ask_min else (names[0], rel["max_q"])
+
+    options = names[:]
     random.shuffle(options)
-    correct_index = options.index(odd_item)
-    text = f"Категория: **{cat_name}**\nНайди лишний предмет!"
+    correct_index = options.index(answer)
+
+    stmt_text = "\n".join(f"- {s}" for s in order)
+    text = f"{stmt_text}\n\nКто {question}?"
     return options, correct_index, text
 
 
@@ -469,17 +476,24 @@ def _gen_logic_sequence():
 
 async def start_logic_game(callback: CallbackQuery, level: int = 1):
     if level == 1:
-        options, correct_index, subtext = _gen_logic_odd_one_out(3)
+        options, correct_index, subtext = _gen_logic_order_riddle(3, shuffle_statements=False)
     elif level == 2:
-        options, correct_index, subtext = _gen_logic_odd_one_out(5)
+        options, correct_index, subtext = _gen_logic_order_riddle(4, shuffle_statements=True)
     else:
         options, correct_index, subtext = _gen_logic_sequence()
 
     _logic_games[callback.from_user.id] = {"level": level, "correct_index": correct_index}
     text = f"🧠 **Логика** ({LEVEL_NAMES[level]})\n\n{subtext}"
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=opt, callback_data=f"logic_ans_{i}") for i, opt in enumerate(options)
-    ]])
+    per_row = 4 if level == 3 else 2  # цифры короткие - в ряд; имена - по 2, чтобы не теснились
+    rows, row = [], []
+    for i, opt in enumerate(options):
+        row.append(InlineKeyboardButton(text=opt, callback_data=f"logic_ans_{i}"))
+        if len(row) == per_row:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     await callback.answer()
 
@@ -795,7 +809,7 @@ async def start_memory_game(callback: CallbackQuery, level: int = 1):
     }
     _pairs_games[callback.from_user.id] = game
     await callback.message.edit_text(
-        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\n{WILDCARD} - джокер, совпадает с чем угодно!\nДопустимо ошибок: {cfg['attempts']} (совпадения бесплатны)",
+        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\n{WILDCARD} - джокер: совпадает с любой картой и сразу закрывает всю её пару!\nДопустимо ошибок: {cfg['attempts']} (совпадения бесплатны)",
         reply_markup=_pairs_render_kb(game), parse_mode="Markdown"
     )
     await callback.answer()
@@ -828,8 +842,24 @@ async def memory_pick(callback: CallbackQuery):
     await callback.answer()
     await asyncio.sleep(1.2)
 
-    is_match = (game["cards"][first] == game["cards"][idx] or game["cards"][first] == WILDCARD or game["cards"][idx] == WILDCARD)
-    if is_match:
+    first_is_joker = game["cards"][first] == WILDCARD
+    idx_is_joker = game["cards"][idx] == WILDCARD
+    is_match = (game["cards"][first] == game["cards"][idx] or first_is_joker or idx_is_joker)
+
+    if first_is_joker or idx_is_joker:
+        # ВАЖНО (фикс бага): джокер - одна карта, а карт всего нечётное число
+        # (2*пар+1). Если просто "съесть" джокером одну карту пары, её
+        # настоящий близнец останется на поле без пары навсегда, и игру
+        # невозможно выиграть. Поэтому джокер сразу закрывает ТРИ клетки:
+        # себя, выбранную карту и её настоящую пару - чётность сохраняется.
+        other = idx if first_is_joker else first
+        game["matched"][first] = True
+        game["matched"][idx] = True
+        other_emoji = game["cards"][other]
+        twin = next((i for i, c in enumerate(game["cards"]) if c == other_emoji and i != other and not game["matched"][i]), None)
+        if twin is not None:
+            game["matched"][twin] = True
+    elif is_match:
         game["matched"][first] = True
         game["matched"][idx] = True
     else:
@@ -840,7 +870,11 @@ async def memory_pick(callback: CallbackQuery):
     game["revealed"][idx] = False
     game["first_pick"] = None
 
-    if all(game["matched"]):
+    # Победа, если совпали ВСЕ обычные карты - джокер может случайно
+    # остаться непойманным (если игрок угадал все пары напрямую, ни разу
+    # его не тронув), и это тоже честная победа, а не зависание.
+    real_cards_done = all(game["matched"][i] for i in range(len(game["cards"])) if game["cards"][i] != WILDCARD)
+    if real_cards_done:
         del _pairs_games[user_id]
         await _game_round_end(callback, 5, game["level"], True, "🃏 **Найди пару**\n\n🎉 Все пары найдены!", answered=True)
         return
@@ -987,11 +1021,11 @@ DETECTIVE_SCENARIOS = [
     "🔍 В гараже кто-то повредил служебную машину!",
     "🔍 Из архива пропали важные документы!",
 ]
-DETECTIVE_NAMES = [
-    "Анна (бухгалтер)", "Виктор (охранник)", "Игорь (механик)", "Дима (курьер)",
-    "Оля (уборщица)", "Пётр (мастер)", "Сергей (сторож)", "Марина (кассир)",
-    "Настя (стажёр)", "Олег (инженер)", "Ира (менеджер)", "Клим (техник)",
-    "Вера (секретарь)", "Борис (грузчик)", "Соня (продавец)", "Артём (водитель)",
+DETECTIVE_SUSPECT_POOL = [
+    ("Анна", "бухгалтер"), ("Виктор", "охранник"), ("Игорь", "механик"), ("Дима", "курьер"),
+    ("Оля", "уборщица"), ("Пётр", "мастер"), ("Сергей", "сторож"), ("Марина", "кассир"),
+    ("Настя", "стажёр"), ("Олег", "инженер"), ("Ира", "менеджер"), ("Клим", "техник"),
+    ("Вера", "секретарь"), ("Борис", "грузчик"), ("Соня", "продавец"), ("Артём", "водитель"),
 ]
 DETECTIVE_LEVEL_CFG = {1: {"suspects": 3, "clues": 2, "max_wrong": 1}, 2: {"suspects": 4, "clues": 3, "max_wrong": 2}, 3: {"suspects": 5, "clues": 4, "max_wrong": 2}}
 
@@ -999,31 +1033,33 @@ DETECTIVE_LEVEL_CFG = {1: {"suspects": 3, "clues": 2, "max_wrong": 1}, 2: {"susp
 def _gen_detective_case(level):
     cfg = DETECTIVE_LEVEL_CFG[level]
     dims = random.sample(DETECTIVE_DIMENSIONS, cfg["clues"])
-    names = random.sample(DETECTIVE_NAMES, cfg["suspects"])
+    picked = random.sample(DETECTIVE_SUSPECT_POOL, cfg["suspects"])
     scenario = random.choice(DETECTIVE_SCENARIOS)
 
-    traits = [[random.random() < 0.5 for _ in dims] for _ in names]
-    culprit_idx = random.randrange(len(names))
+    traits = [[random.random() < 0.5 for _ in dims] for _ in picked]
+    culprit_idx = random.randrange(len(picked))
     traits[culprit_idx] = [True] * len(dims)
 
     # Гарантируем, что виновный - единственный, кто подходит под ВСЕ улики
-    for i in range(len(names)):
+    for i in range(len(picked)):
         if i == culprit_idx:
             continue
         if all(traits[i]):
             traits[i][random.randrange(len(dims))] = False
 
-    suspects = []
-    fail_reason = []  # для каждого не-виновного - индекс первой улики, которой он не соответствует
-    for i, name in enumerate(names):
+    suspects = []  # короткое имя для кнопки
+    dossiers = []  # полное досье для текста сообщения
+    fail_reason = []
+    for i, (name, profession) in enumerate(picked):
         desc = ", ".join(dims[d]["true"] if traits[i][d] else dims[d]["false"] for d in range(len(dims)))
-        suspects.append(f"{name}: {desc}")
+        suspects.append(name)
+        dossiers.append(f"**{i + 1}. {name}** ({profession}) - {desc}")
         first_fail = next((d for d in range(len(dims)) if not traits[i][d]), None)
         fail_reason.append(first_fail)
 
     clues = [f"Улика {i + 1}: {dims[i]['clue']}." for i in range(len(dims))]
     return {
-        "intro": scenario, "clues": clues, "suspects": suspects,
+        "intro": scenario, "clues": clues, "suspects": suspects, "dossiers": dossiers,
         "culprit": culprit_idx, "fail_reason": fail_reason, "max_wrong": cfg["max_wrong"],
     }
 
@@ -1056,15 +1092,22 @@ async def det_next(callback: CallbackQuery):
         await callback.answer()
         return
 
-    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{shown_clues}\n\nКого обвинишь?")
+    dossiers = "\n".join(case["dossiers"])
+    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{shown_clues}\n\n👤 **Досье подозреваемых:**\n{dossiers}\n\nКого обвинишь?")
 
 
 async def _detective_show_suspects(callback: CallbackQuery, game, header_text: str):
     case = game["case"]
-    rows = [
-        [InlineKeyboardButton(text=name, callback_data=f"det_guess_{i}")]
-        for i, name in enumerate(case["suspects"]) if i not in game["eliminated"]
-    ]
+    rows, row = [], []
+    for i, name in enumerate(case["suspects"]):
+        if i in game["eliminated"]:
+            continue
+        row.append(InlineKeyboardButton(text=name, callback_data=f"det_guess_{i}"))
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
     wrong_left = case["max_wrong"] - game["wrong"]
     text = header_text + f"\n\n❗ Неверных обвинений в запасе: {wrong_left}"
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="Markdown")
@@ -1084,23 +1127,27 @@ async def det_guess(callback: CallbackQuery):
 
     if picked == case["culprit"]:
         del _detective_games[user_id]
-        await _game_round_end(callback, 7, game["level"], True, "🔍 **Детектив**\n\n🎉 Дело раскрыто! Ты вычислил виновного!")
+        culprit_name = case["suspects"][case["culprit"]]
+        await _game_round_end(callback, 7, game["level"], True, f"🔍 **Детектив**\n\n🎉 Дело раскрыто! Виновен был {culprit_name}!")
         return
 
     game["wrong"] += 1
     game["eliminated"].add(picked)
     fail_dim = case["fail_reason"][picked]
-    suspect_name = case["suspects"][picked].split(":")[0]
+    suspect_name = case["suspects"][picked]
 
     if fail_dim is not None:
         reason = f"❌ {suspect_name} не подходит: не совпадает Улика {fail_dim + 1}."
     else:
         reason = f"❌ {suspect_name} невиновен."
 
+    shown_clues = "\n".join(case["clues"])
+    dossiers = "\n".join(case["dossiers"])
+
     if game["wrong"] > case["max_wrong"]:
         del _detective_games[user_id]
-        culprit_name = case["suspects"][case["culprit"]].split(":")[0]
+        culprit_name = case["suspects"][case["culprit"]]
         await _game_round_end(callback, 7, game["level"], False, f"🔍 **Детектив**\n\n{reason}\n\n😢 Попытки закончились. Виновен был: {culprit_name}")
         return
 
-    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{reason}\n\nПопробуй ещё раз - кого обвинишь?")
+    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{shown_clues}\n\n👤 **Досье подозреваемых:**\n{dossiers}\n\n{reason}\nПопробуй ещё раз - кого обвинишь?")
