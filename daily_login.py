@@ -250,6 +250,19 @@ async def daily_admin_test(callback: CallbackQuery, bot: Bot):
 # ═══════════════════════════════════════════════════════════
 # ЛЕСТНИЦА СЛОЖНОСТИ: общий финал раунда для ВСЕХ 7 игр
 # ═══════════════════════════════════════════════════════════
+# Скрытый бонус алмазами за прохождение 3 (максимальной) сложности в конкретные
+# дни - специально НЕ упоминается ни в одном сообщении игроку.
+_SECRET_DIAMOND_BONUS = {3: 1, 6: 2, 7: 3}
+
+
+def _apply_secret_diamond_bonus(user, day, cleared_level):
+    if cleared_level == 3:
+        amount = _SECRET_DIAMOND_BONUS.get(day, 0)
+        if amount:
+            user["diamonds"] += amount
+            user["total_diamonds_earned"] += amount
+
+
 async def _bank_and_finish(callback: CallbackQuery, day: int, cleared_level: int, result_text: str):
     user_id = callback.from_user.id
     user = _users.get(user_id) if _users else None
@@ -264,6 +277,7 @@ async def _bank_and_finish(callback: CallbackQuery, day: int, cleared_level: int
             result_text += f"\n\n💰 Итоговый бонус: +{bonus_str} монет!"
         else:
             result_text += "\n\nБез бонуса в этот раз - возвращайся завтра за новым днём."
+        _apply_secret_diamond_bonus(user, day, cleared_level)
         await database.save_user(user_id, user)
     _level_progress.pop(user_id, None)
     await callback.message.edit_text(result_text, parse_mode="Markdown")
@@ -283,6 +297,7 @@ async def _bank_and_finish_new_message(user_id: int, bot: Bot, day: int, cleared
             result_text += f"\n\n💰 Итоговый бонус: +{bonus_str} монет!"
         else:
             result_text += "\n\nБез бонуса в этот раз - возвращайся завтра за новым днём."
+        _apply_secret_diamond_bonus(user, day, cleared_level)
         await database.save_user(user_id, user)
     _level_progress.pop(user_id, None)
     await bot.send_message(user_id, result_text, parse_mode="Markdown")
@@ -398,377 +413,213 @@ async def fox_play(callback: CallbackQuery):
 
 # ═══════════════════════════════════════════════════════════
 # ДЕНЬ 2: ЛОГИКА
-# Три РАЗНЫХ настоящих логических задачи, не "найди лишнее":
-#   Уровень 1 - Логическая сетка ("кто где живёт"): условия генерируются
-#               процедурно и проверяются перебором всех перестановок, чтобы
-#               решение было единственным и логически выводимым.
-#   Уровень 2 - Взлом кода (Mastermind): секретный 4-значный код без
-#               повторов, после каждой попытки - сколько цифр угадано точно
-#               и сколько угадано, но не на своём месте.
-#   Уровень 3 - Фальшивая монета: классическая задача на взвешивания. 9 монет,
-#               одна фальшивая (неизвестно тяжелее или легче), ровно 3
-#               взвешивания на чашечных весах, чтобы её найти.
+# Цепочка из НЕСКОЛЬКИХ разных заданий подряд (не одна большая головоломка) -
+# найди лишнее, математика, последовательности, логика сравнений - типы
+# перемешаны случайно, чем выше уровень, тем заданий больше и они сложнее.
+# Одна ошибка - раунд провален (как и везде, можно повторить попытку).
 # ═══════════════════════════════════════════════════════════
+_quiz_games = {}
+QUIZ_ROUNDS_PER_LEVEL = {1: 3, 2: 4, 3: 5}
 
-# --- Подуровень 1: Логическая сетка ---
-_grid_games = {}
-GRID_NAMES = ["Макс", "Руслан", "Лена", "Катя", "Олег", "Соня", "Игорь", "Вика"]
-
-
-def _gen_logic_grid(n=3):
-    people = random.sample(GRID_NAMES, n)
-    houses = list(range(1, n + 1))
-    truth_houses = houses[:]
-    random.shuffle(truth_houses)
-    pos = {people[i]: truth_houses[i] for i in range(n)}
-
-    candidates = []
-    for i in range(n):
-        a = people[i]
-        for j in range(n):
-            if i == j:
-                continue
-            b = people[j]
-            if pos[a] < pos[b]:
-                candidates.append((lambda assign, a=a, b=b: assign[a] < assign[b], f"{a} живёт левее {b}"))
-            if abs(pos[a] - pos[b]) != 1:
-                candidates.append((lambda assign, a=a, b=b: abs(assign[a] - assign[b]) != 1, f"{a} не живёт рядом с {b}"))
-        other_houses = [h for h in houses if h != pos[a]]
-        if other_houses:
-            wrong_house = random.choice(other_houses)
-            candidates.append((lambda assign, a=a, h=wrong_house: assign[a] != h, f"{a} не живёт в доме {wrong_house}"))
-
-    random.shuffle(candidates)
-
-    def count_solutions(checks):
-        count = 0
-        for perm in itertools.permutations(houses):
-            assign = {people[i]: perm[i] for i in range(n)}
-            if all(fn(assign) for fn, _ in checks):
-                count += 1
-                if count > 1:
-                    return count
-        return count
-
-    selected = []
-    for cand in candidates:
-        selected.append(cand)
-        if count_solutions(selected) == 1:
-            break
-
-    clue_texts = [text for _, text in selected]
-    return people, pos, clue_texts
+QUIZ_CATEGORIES = {
+    "Фрукты": ["🍎", "🍌", "🍇", "🍉", "🍒", "🥝", "🍑", "🍋"],
+    "Спорт": ["⚽", "🏀", "🎾", "🏐", "🏈", "🎳", "🏓", "⛳"],
+    "Животные": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
+    "Транспорт": ["🚗", "✈️", "🚢", "🚂", "🚲", "🛵", "🚁", "🚀"],
+    "Небесные явления": ["☀️", "🌙", "⭐", "☁️", "🌈", "⚡", "🌪️", "❄️"],
+    "Еда": ["🍕", "🍔", "🌭", "🍟", "🍰", "🍩", "🍦", "🍫"],
+    "Инструменты": ["🔨", "🔧", "🪓", "🪚", "🔩", "⚙️", "🪛", "🧲"],
+}
+LOGIC_NAMES = ["Антон", "Борис", "Вика", "Галя", "Денис", "Елена", "Женя", "Иван", "Катя", "Лена", "Миша", "Настя", "Олег", "Паша", "Рита", "Саша"]
+LOGIC_RELATIONS = [
+    {"more": "тяжелее", "max_q": "самый тяжёлый", "min_q": "самый лёгкий"},
+    {"more": "выше", "max_q": "самый высокий", "min_q": "самый низкий"},
+    {"more": "старше", "max_q": "самый старший", "min_q": "самый младший"},
+    {"more": "быстрее", "max_q": "самый быстрый", "min_q": "самый медленный"},
+    {"more": "богаче", "max_q": "самый богатый", "min_q": "самый бедный"},
+]
 
 
-def _grid_render(game):
-    n = len(game["people"])
-    clues_text = "\n".join(f"- {c}" for c in game["clues"])
-    house_idx = game["house_idx"]
-    text = f"🧩 **Логическая сетка** ({LEVEL_NAMES[game['level']]})\n\nУсловия:\n{clues_text}\n\n🏠 Кто живёт в доме {house_idx}?"
-    rows = [[InlineKeyboardButton(text=p, callback_data=f"grid_{p}")] for p in game["remaining"]]
-    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+def _task_odd_one_out():
+    cat_name, pool = random.choice(list(QUIZ_CATEGORIES.items()))
+    items = random.sample(pool, 3)
+    odd_cat = random.choice([c for c in QUIZ_CATEGORIES if c != cat_name])
+    odd_item = random.choice(QUIZ_CATEGORIES[odd_cat])
+    options = items + [odd_item]
+    random.shuffle(options)
+    correct_index = options.index(odd_item)
+    text = f"Категория: **{cat_name}**\nНайди лишний предмет!"
+    return options, correct_index, text
 
 
-async def start_logic_grid(callback: CallbackQuery, level: int = 1):
-    n = 3
-    people, truth, clues = _gen_logic_grid(n)
-    game = {"people": people, "truth": truth, "clues": clues, "assignment": {}, "house_idx": 1, "remaining": people[:], "level": level}
-    _grid_games[callback.from_user.id] = game
-    text, kb = _grid_render(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
+def _task_math(difficulty):
+    def apply(x, op, y):
+        return x + y if op == "+" else (x - y if op == "-" else x * y)
+
+    if difficulty == "easy":
+        a, b = random.randint(2, 20), random.randint(2, 20)
+        op = random.choice(["+", "-"])
+        if op == "-" and a < b:
+            a, b = b, a
+        answer = apply(a, op, b)
+        expr = f"{a} {op} {b}"
+    elif difficulty == "medium":
+        a, b, c = random.randint(2, 15), random.randint(2, 15), random.randint(2, 10)
+        op1, op2 = random.sample(["+", "-", "*"], 2)
+        if op1 == "-" and a < b:
+            a, b = b, a
+        val1 = apply(a, op1, b)
+        answer = apply(val1, op2, c)
+        expr = f"({a} {op1} {b}) {op2} {c}"
+    else:
+        a, b, c, d = [random.randint(2, 12) for _ in range(4)]
+        ops = random.sample(["+", "-", "*"], 3)
+        if ops[0] == "-" and a < b:
+            a, b = b, a
+        if ops[2] == "-" and c < d:
+            c, d = d, c
+        val_left = apply(a, ops[0], b)
+        val_right = apply(c, ops[2], d)
+        answer = apply(val_left, ops[1], val_right)
+        expr = f"({a} {ops[0]} {b}) {ops[1]} ({c} {ops[2]} {d})"
+
+    wrong = set()
+    while len(wrong) < 3:
+        delta = random.choice([-5, -3, -2, -1, 1, 2, 3, 5])
+        candidate = answer + delta
+        if candidate != answer:
+            wrong.add(candidate)
+    options = [answer] + list(wrong)
+    random.shuffle(options)
+    correct_index = options.index(answer)
+    text = f"Реши пример:\n**{expr} = ?**"
+    return [str(o) for o in options], correct_index, text
 
 
-@router.callback_query(F.data.startswith("grid_"))
-async def grid_pick(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _grid_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
+def _gen_logic_sequence():
+    kind = random.choice(["arith", "geom", "square", "fib"])
+    if kind == "arith":
+        start, step = random.randint(1, 10), random.randint(2, 9)
+        seq = [start + step * i for i in range(4)]
+        answer = start + step * 4
+    elif kind == "geom":
+        start, ratio = random.randint(1, 3), random.randint(2, 3)
+        seq = [start * (ratio ** i) for i in range(4)]
+        answer = start * (ratio ** 4)
+    elif kind == "square":
+        offset = random.randint(0, 3)
+        seq = [(offset + i) ** 2 for i in range(1, 5)]
+        answer = (offset + 5) ** 2
+    else:
+        a, b = random.randint(1, 5), random.randint(1, 5)
+        seq = [a, b]
+        for _ in range(2):
+            seq.append(seq[-1] + seq[-2])
+        answer = seq[-1] + seq[-2]
 
-    name = callback.data.replace("grid_", "", 1)
-    if name not in game["remaining"]:
-        await callback.answer()
-        return
-
-    game["assignment"][game["house_idx"]] = name
-    game["remaining"].remove(name)
-    game["house_idx"] += 1
-
-    if game["house_idx"] > len(game["people"]):
-        del _grid_games[user_id]
-        won = all(game["truth"][p] == h for h, p in game["assignment"].items())
-        if won:
-            text = "🧩 **Логическая сетка**\n\n🎉 Всё верно! Схема расселения разгадана."
-        else:
-            correct_order = ", ".join(f"{h}-{p}" for p, h in sorted(game["truth"].items(), key=lambda x: x[1]))
-            text = f"🧩 **Логическая сетка**\n\n😢 Не сходится. Правильно было: {correct_order}"
-        await _game_round_end(callback, 2, game["level"], won, text)
-        return
-
-    text, kb = _grid_render(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-# --- Подуровень 2: Взлом кода (Mastermind) ---
-_mastermind_games = {}
-MASTERMIND_MAX_GUESSES = 6
+    wrong = set()
+    while len(wrong) < 3:
+        delta = random.choice([-3, -2, -1, 1, 2, 3])
+        candidate = answer + delta
+        if candidate > 0 and candidate != answer:
+            wrong.add(candidate)
+    options = [answer] + list(wrong)
+    random.shuffle(options)
+    correct_index = options.index(answer)
+    seq_str = ", ".join(str(x) for x in seq)
+    text = f"Продолжи последовательность:\n**{seq_str}, ?**"
+    return [str(o) for o in options], correct_index, text
 
 
-def _mm_feedback(guess, secret):
-    bulls = sum(1 for i in range(len(secret)) if guess[i] == secret[i])
-    common = len(set(guess) & set(secret))
-    cows = common - bulls
-    return bulls, cows
+def _gen_logic_order_riddle(n_people, shuffle_statements):
+    rel = random.choice(LOGIC_RELATIONS)
+    names = random.sample(LOGIC_NAMES, n_people)
+    statements = [f"{names[i]} {rel['more']} {names[i + 1]}" for i in range(n_people - 1)]
+    order = statements[:]
+    if shuffle_statements:
+        random.shuffle(order)
+
+    ask_min = random.random() < 0.5
+    answer, question = (names[-1], rel["min_q"]) if ask_min else (names[0], rel["max_q"])
+
+    options = names[:]
+    random.shuffle(options)
+    correct_index = options.index(answer)
+
+    stmt_text = "\n".join(f"- {s}" for s in order)
+    text = f"{stmt_text}\n\nКто {question}?"
+    return options, correct_index, text
 
 
-def _mm_render(game):
-    history_lines = []
-    for g, (b, c) in game["history"]:
-        g_str = "".join(str(d) for d in g)
-        history_lines.append(f"{g_str} → 🎯{b} точно, 🔸{c} не на месте")
-    history_text = "\n".join(history_lines) if history_lines else "Пока попыток не было."
+def _gen_quiz_round(level):
+    if level == 1:
+        kind = random.choice(["odd", "math_easy", "math_easy"])
+    elif level == 2:
+        kind = random.choice(["odd", "math_medium", "sequence", "order"])
+    else:
+        kind = random.choice(["math_hard", "sequence", "order_shuffled", "order_shuffled"])
 
-    current = "".join(str(d) for d in game["current_guess"]) or "_ _ _ _"
-    left = game["max_guesses"] - len(game["history"])
-    text = (
-        f"🔢 **Взлом кода** ({LEVEL_NAMES[game['level']]})\n\n"
-        f"Код из 4 цифр, цифры не повторяются.\n\n"
-        f"{history_text}\n\n"
-        f"Текущий набор: {current}\nОсталось попыток: {left}"
-    )
+    if kind == "odd":
+        return _task_odd_one_out()
+    if kind.startswith("math_"):
+        return _task_math(kind.split("_", 1)[1])
+    if kind == "sequence":
+        return _gen_logic_sequence()
+    if kind == "order":
+        return _gen_logic_order_riddle(3, shuffle_statements=False)
+    return _gen_logic_order_riddle(4, shuffle_statements=True)
 
+
+def _quiz_render_kb(options):
+    per_row = 4 if all(o.lstrip("-").isdigit() for o in options) else 2
     rows, row = [], []
-    for d in range(10):
-        used = d in game["current_guess"]
-        btn_text = "✅" if used else str(d)
-        cb = "daily_noop" if used else f"mm_digit_{d}"
-        row.append(InlineKeyboardButton(text=btn_text, callback_data=cb))
-        if len(row) == 5:
+    for i, opt in enumerate(options):
+        row.append(InlineKeyboardButton(text=opt, callback_data=f"logic_ans_{i}"))
+        if len(row) == per_row:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def start_mastermind(callback: CallbackQuery, level: int = 2):
-    secret = random.sample(range(10), 4)
-    game = {"secret": secret, "current_guess": [], "history": [], "max_guesses": MASTERMIND_MAX_GUESSES, "level": level}
-    _mastermind_games[callback.from_user.id] = game
-    text, kb = _mm_render(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("mm_digit_"))
-async def mm_digit_pick(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _mastermind_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    d = int(callback.data.replace("mm_digit_", "", 1))
-    if d in game["current_guess"]:
-        await callback.answer()
-        return
-
-    game["current_guess"].append(d)
-
-    if len(game["current_guess"]) == 4:
-        bulls, cows = _mm_feedback(game["current_guess"], game["secret"])
-        game["history"].append((game["current_guess"][:], (bulls, cows)))
-
-        if bulls == 4:
-            del _mastermind_games[user_id]
-            await _game_round_end(callback, 2, game["level"], True, "🔢 **Взлом кода**\n\n🎉 Код взломан!")
-            return
-
-        if len(game["history"]) >= game["max_guesses"]:
-            del _mastermind_games[user_id]
-            secret_str = "".join(str(x) for x in game["secret"])
-            await _game_round_end(callback, 2, game["level"], False, f"🔢 **Взлом кода**\n\n😢 Попытки закончились. Код был: {secret_str}")
-            return
-
-        game["current_guess"] = []
-
-    text, kb = _mm_render(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-# --- Подуровень 3: Фальшивая монета ---
-_coin_games = {}
-COIN_COUNT = 9
-COIN_MAX_WEIGHINGS = 3
-
-
-def _coin_render_weigh(game):
-    pan_emoji = {0: "⚪", 1: "🔵", 2: "🔴"}
-    rows, row = [], []
-    for i in range(COIN_COUNT):
-        text = f"{i + 1}{pan_emoji[game['pan'][i]]}"
-        row.append(InlineKeyboardButton(text=text, callback_data=f"coin_{i}"))
-        if len(row) == 3:
-            rows.append(row)
-            row = []
-    rows.append([InlineKeyboardButton(text=f"⚖️ Взвесить ({game['weighings_used']}/{COIN_MAX_WEIGHINGS})", callback_data="coin_weigh")])
-    rows.append([InlineKeyboardButton(text="🔍 Назвать фальшивую монету", callback_data="coin_guess_start")])
-
-    history_text = "\n".join(game["history"]) if game["history"] else "Взвешиваний пока не было."
-    text = (
-        f"⚖️ **Фальшивая монета** ({LEVEL_NAMES[game['level']]})\n\n"
-        f"9 монет, одна фальшивая (неизвестно тяжелее или легче).\n"
-        f"🔵 - левая чаша, 🔴 - правая чаша. Жми монету, чтобы переключить её между чашами.\n\n"
-        f"{history_text}"
-    )
-    return text, InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-async def start_coin_puzzle(callback: CallbackQuery, level: int = 3):
-    fake_idx = random.randrange(COIN_COUNT)
-    fake_heavier = random.random() < 0.5
-    game = {
-        "fake_idx": fake_idx, "fake_heavier": fake_heavier,
-        "pan": [0] * COIN_COUNT, "weighings_used": 0, "history": [], "level": level,
-    }
-    _coin_games[callback.from_user.id] = game
-    text, kb = _coin_render_weigh(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-@router.callback_query(F.data == "coin_weigh")
-async def coin_weigh(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _coin_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    left = [i for i, p in enumerate(game["pan"]) if p == 1]
-    right = [i for i, p in enumerate(game["pan"]) if p == 2]
-
-    if len(left) == 0 or len(left) != len(right):
-        await callback.answer("Нужно одинаковое и ненулевое число монет на обеих чашах!", show_alert=True)
-        return
-
-    if game["weighings_used"] >= COIN_MAX_WEIGHINGS:
-        await callback.answer("Взвешивания закончились - пора называть монету!", show_alert=True)
-        return
-
-    fake_idx, fake_heavier = game["fake_idx"], game["fake_heavier"]
-    if fake_idx in left:
-        result = "left" if fake_heavier else "right"
-    elif fake_idx in right:
-        result = "right" if fake_heavier else "left"
-    else:
-        result = "equal"
-
-    result_label = {"left": "⚖️ Левая чаша тяжелее", "right": "⚖️ Правая чаша тяжелее", "equal": "⚖️ Равновесие"}[result]
-    game["weighings_used"] += 1
-    left_str = ",".join(str(i + 1) for i in left)
-    right_str = ",".join(str(i + 1) for i in right)
-    game["history"].append(f"Взвешивание {game['weighings_used']}: [{left_str}] vs [{right_str}] → {result_label}")
-    game["pan"] = [0] * COIN_COUNT
-
-    text, kb = _coin_render_weigh(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
-
-
-@router.callback_query(F.data == "coin_guess_start")
-async def coin_guess_start(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _coin_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    rows, row = [], []
-    for i in range(COIN_COUNT):
-        row.append(InlineKeyboardButton(text=str(i + 1), callback_data=f"coin_guess_{i}"))
-        if len(row) == 3:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    await callback.message.edit_text(
-        f"⚖️ **Фальшивая монета**\n\nКакая монета фальшивая?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("coin_guess_"))
-async def coin_guess_pick(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _coin_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    idx = int(callback.data.replace("coin_guess_", "", 1))
-    game["guessed_coin"] = idx
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="⬆️ Тяжелее", callback_data="coin_dir_heavy"),
-        InlineKeyboardButton(text="⬇️ Легче", callback_data="coin_dir_light"),
-    ]])
-    await callback.message.edit_text(
-        f"⚖️ **Фальшивая монета**\n\nМонета {idx + 1} - она тяжелее или легче остальных?",
-        reply_markup=kb, parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("coin_dir_"))
-async def coin_guess_direction(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    game = _coin_games.pop(user_id, None)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    said_heavier = callback.data == "coin_dir_heavy"
-    won = (game["guessed_coin"] == game["fake_idx"] and said_heavier == game["fake_heavier"])
-
-    if won:
-        text = "⚖️ **Фальшивая монета**\n\n🎉 Точно! Фальшивая монета найдена!"
-    else:
-        real_dir = "тяжелее" if game["fake_heavier"] else "легче"
-        text = f"⚖️ **Фальшивая монета**\n\n😢 Не угадал. На самом деле монета {game['fake_idx'] + 1} была {real_dir}."
-
-    await _game_round_end(callback, 2, game["level"], won, text)
-
-
-@router.callback_query(F.data.startswith("coin_"))
-async def coin_toggle(callback: CallbackQuery):
-    # Регистрируется ПОСЛЕДНИМ среди "coin_*" хендлеров - более specific
-    # паттерны (coin_weigh, coin_guess_*, coin_dir_*) уже перехвачены выше
-    # по списку, сюда долетают только нажатия на сами монеты (coin_0..coin_8).
-    user_id = callback.from_user.id
-    game = _coin_games.get(user_id)
-    if not game:
-        await callback.answer("Игра не найдена, начни заново", show_alert=True)
-        return
-
-    idx = int(callback.data.replace("coin_", "", 1))
-    game["pan"][idx] = (game["pan"][idx] + 1) % 3
-    text, kb = _coin_render_weigh(game)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-    await callback.answer()
+async def _quiz_next_round(callback: CallbackQuery, game):
+    game["round"] += 1
+    options, correct_index, subtext = _gen_quiz_round(game["level"])
+    game["correct_index"] = correct_index
+    text = f"🧠 **Логика** ({LEVEL_NAMES[game['level']]})\nЗадание {game['round']}/{game['total']}\n\n{subtext}"
+    await callback.message.edit_text(text, reply_markup=_quiz_render_kb(options), parse_mode="Markdown")
 
 
 async def start_logic_game(callback: CallbackQuery, level: int = 1):
-    if level == 1:
-        await start_logic_grid(callback, level)
-    elif level == 2:
-        await start_mastermind(callback, level)
-    else:
-        await start_coin_puzzle(callback, level)
+    total = QUIZ_ROUNDS_PER_LEVEL[level]
+    game = {"level": level, "round": 0, "total": total}
+    _quiz_games[callback.from_user.id] = game
+    await callback.answer()
+    await _quiz_next_round(callback, game)
+
+
+@router.callback_query(F.data.startswith("logic_ans_"))
+async def logic_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    game = _quiz_games.get(user_id)
+    if not game:
+        await callback.answer("Игра не найдена, начни заново", show_alert=True)
+        return
+
+    picked = int(callback.data.replace("logic_ans_", "", 1))
+    if picked != game["correct_index"]:
+        del _quiz_games[user_id]
+        await _game_round_end(callback, 2, game["level"], False, f"🧠 **Логика**\n\n😢 Ошибка в задании {game['round']}/{game['total']}.")
+        return
+
+    if game["round"] >= game["total"]:
+        del _quiz_games[user_id]
+        await _game_round_end(callback, 2, game["level"], True, "🧠 **Логика**\n\n🎉 Все задания решены верно!")
+        return
+
+    await callback.answer("✅ Верно! Дальше...")
+    await _quiz_next_round(callback, game)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -777,8 +628,8 @@ async def start_logic_game(callback: CallbackQuery, level: int = 1):
 _ettt_games = {}
 ETTT_LEVELS = {
     1: {"size": 3, "win_len": 3, "mines": 0, "strength": "weak", "think_delay": 0.5},
-    2: {"size": 4, "win_len": 3, "mines": 1, "strength": "medium", "think_delay": 0.9},
-    3: {"size": 5, "win_len": 4, "mines": 3, "strength": "strong", "think_delay": 1.4},
+    2: {"size": 4, "win_len": 3, "mines": 2, "strength": "medium", "think_delay": 0.9},
+    3: {"size": 5, "win_len": 4, "mines": 4, "strength": "strong", "think_delay": 1.4},
 }
 
 
@@ -822,11 +673,11 @@ def _ettt_bot_move(board, size, win_len, strength):
     empties = [i for i, v in enumerate(board) if v is None]
 
     if strength == "weak":
-        # Слабый бот: блокирует только иногда, в остальном рандом
+        # Слабый бот: блокирует чаще, чем раньше, но всё ещё не идеально
         for i in empties:
             if _ettt_would_win(board, size, win_len, i, "O"):
                 return i
-        if random.random() < 0.4:
+        if random.random() < 0.55:
             for i in empties:
                 if _ettt_would_win(board, size, win_len, i, "X"):
                     return i
@@ -840,12 +691,18 @@ def _ettt_bot_move(board, size, win_len, strength):
             return i
 
     if strength == "medium":
+        # Средний бот теперь чаще играет "с умом", а не чисто случайно
+        if random.random() < 0.5:
+            scored = [(_ettt_line_potential(board, size, i, "O") + _ettt_line_potential(board, size, i, "X") * 0.6, i) for i in empties]
+            scored.sort(key=lambda t: t[0], reverse=True)
+            top = scored[:4] if len(scored) >= 4 else scored
+            return random.choice(top)[1]
         return random.choice(empties)
 
-    # strong: полноценный эвристический выбор среди топ-3
+    # strong: полноценный эвристический выбор среди топ-2 (было топ-3 - теперь острее)
     scored = [(_ettt_line_potential(board, size, i, "O") + _ettt_line_potential(board, size, i, "X") * 0.8, i) for i in empties]
     scored.sort(key=lambda t: t[0], reverse=True)
-    top = scored[:3] if len(scored) >= 3 else scored
+    top = scored[:2] if len(scored) >= 2 else scored
     return random.choice(top)[1]
 
 
@@ -868,13 +725,29 @@ async def start_exploding_ttt(callback: CallbackQuery, bot: Bot, level: int = 1)
     board = [None] * (size * size)
     mines = set(random.sample(range(len(board)), cfg["mines"])) if cfg["mines"] else set()
     _ettt_games[callback.from_user.id] = {"board": board, "mines": mines, "level": level, "cfg": cfg}
+    await callback.answer()
 
     mine_note = "\n(на поле спрятаны мины - будь осторожен)" if cfg["mines"] else ""
+
+    # Бот теперь иногда ходит первым - не всегда прогнозируемый порядок
+    bot_goes_first = random.random() < 0.4
+    if bot_goes_first:
+        await callback.message.edit_text(
+            f"💥 **Взрывные крестики-нолики** ({LEVEL_NAMES[level]})\nНа этот раз первым ходит бот!\n🤔 Бот думает...",
+            reply_markup=_ettt_render_kb(board, size), parse_mode="Markdown"
+        )
+        await asyncio.sleep(cfg["think_delay"])
+        opening_idx = _ettt_bot_move(board, size, cfg["win_len"], cfg["strength"])
+        if opening_idx in mines:
+            board[opening_idx] = "MINE"
+            mines.discard(opening_idx)
+        else:
+            board[opening_idx] = "O"
+
     await callback.message.edit_text(
         f"💥 **Взрывные крестики-нолики** ({LEVEL_NAMES[level]})\nТы - ❌, бот - ⭕. Собери {cfg['win_len']} в ряд!{mine_note}",
         reply_markup=_ettt_render_kb(board, size), parse_mode="Markdown"
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("ettt_"))
@@ -1034,11 +907,10 @@ async def words_play(callback: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
-# ДЕНЬ 5: НАЙДИ ПАРУ (с джокером - поле растёт по уровням)
+# ДЕНЬ 5: НАЙДИ ПАРУ (поле растёт по уровням)
 # ═══════════════════════════════════════════════════════════
 _pairs_games = {}
 PAIRS_EMOJI_POOL = ["🍎", "🍌", "🍇", "🍉", "🍒", "🥝", "🍑", "🍋", "🥥", "🍍", "🥭", "🍈"]
-WILDCARD = "👑"
 PAIRS_LEVEL_CFG = {1: {"pairs": 4, "attempts": 6}, 2: {"pairs": 8, "attempts": 10}, 3: {"pairs": 12, "attempts": 9}}
 
 
@@ -1060,7 +932,7 @@ def _pairs_render_kb(game):
 async def start_memory_game(callback: CallbackQuery, level: int = 1):
     cfg = PAIRS_LEVEL_CFG[level]
     emojis = PAIRS_EMOJI_POOL[:cfg["pairs"]]
-    cards = emojis * 2 + [WILDCARD]
+    cards = emojis * 2
     random.shuffle(cards)
     game = {
         "cards": cards, "revealed": [False] * len(cards), "matched": [False] * len(cards),
@@ -1068,7 +940,7 @@ async def start_memory_game(callback: CallbackQuery, level: int = 1):
     }
     _pairs_games[callback.from_user.id] = game
     await callback.message.edit_text(
-        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\n{WILDCARD} - джокер: совпадает с любой картой и сразу закрывает всю её пару!\nДопустимо ошибок: {cfg['attempts']} (совпадения бесплатны)",
+        f"🃏 **Найди пару** ({LEVEL_NAMES[level]})\nДопустимо ошибок: {cfg['attempts']} (совпадения бесплатны)",
         reply_markup=_pairs_render_kb(game), parse_mode="Markdown"
     )
     await callback.answer()
@@ -1101,24 +973,7 @@ async def memory_pick(callback: CallbackQuery):
     await callback.answer()
     await asyncio.sleep(1.2)
 
-    first_is_joker = game["cards"][first] == WILDCARD
-    idx_is_joker = game["cards"][idx] == WILDCARD
-    is_match = (game["cards"][first] == game["cards"][idx] or first_is_joker or idx_is_joker)
-
-    if first_is_joker or idx_is_joker:
-        # ВАЖНО (фикс бага): джокер - одна карта, а карт всего нечётное число
-        # (2*пар+1). Если просто "съесть" джокером одну карту пары, её
-        # настоящий близнец останется на поле без пары навсегда, и игру
-        # невозможно выиграть. Поэтому джокер сразу закрывает ТРИ клетки:
-        # себя, выбранную карту и её настоящую пару - чётность сохраняется.
-        other = idx if first_is_joker else first
-        game["matched"][first] = True
-        game["matched"][idx] = True
-        other_emoji = game["cards"][other]
-        twin = next((i for i, c in enumerate(game["cards"]) if c == other_emoji and i != other and not game["matched"][i]), None)
-        if twin is not None:
-            game["matched"][twin] = True
-    elif is_match:
+    if game["cards"][first] == game["cards"][idx]:
         game["matched"][first] = True
         game["matched"][idx] = True
     else:
@@ -1129,11 +984,7 @@ async def memory_pick(callback: CallbackQuery):
     game["revealed"][idx] = False
     game["first_pick"] = None
 
-    # Победа, если совпали ВСЕ обычные карты - джокер может случайно
-    # остаться непойманным (если игрок угадал все пары напрямую, ни разу
-    # его не тронув), и это тоже честная победа, а не зависание.
-    real_cards_done = all(game["matched"][i] for i in range(len(game["cards"])) if game["cards"][i] != WILDCARD)
-    if real_cards_done:
+    if all(game["matched"]):
         del _pairs_games[user_id]
         await _game_round_end(callback, 5, game["level"], True, "🃏 **Найди пару**\n\n🎉 Все пары найдены!", answered=True)
         return
@@ -1288,12 +1139,21 @@ DETECTIVE_SUSPECT_POOL = [
 ]
 DETECTIVE_LEVEL_CFG = {1: {"suspects": 3, "clues": 2, "max_wrong": 1}, 2: {"suspects": 4, "clues": 3, "max_wrong": 2}, 3: {"suspects": 5, "clues": 4, "max_wrong": 2}}
 
+# Каждой улике при генерации дела присваивается своё "следственное действие" -
+# игрок сам выбирает, в каком порядке их проводить (не линейное "Далее").
+DETECTIVE_ACTIONS = [
+    "📁 Изучить личные дела", "🔍 Снять отпечатки пальцев", "📷 Осмотреть место преступления",
+    "🗣️ Допросить свидетелей", "💻 Проверить камеры видеонаблюдения", "📞 Проверить телефонные записи",
+    "🧪 Провести экспертизу улик", "📋 Изучить журнал доступа",
+]
+
 
 def _gen_detective_case(level):
     cfg = DETECTIVE_LEVEL_CFG[level]
     dims = random.sample(DETECTIVE_DIMENSIONS, cfg["clues"])
     picked = random.sample(DETECTIVE_SUSPECT_POOL, cfg["suspects"])
     scenario = random.choice(DETECTIVE_SCENARIOS)
+    actions = random.sample(DETECTIVE_ACTIONS, len(dims))
 
     traits = [[random.random() < 0.5 for _ in dims] for _ in picked]
     culprit_idx = random.randrange(len(picked))
@@ -1320,39 +1180,60 @@ def _gen_detective_case(level):
     return {
         "intro": scenario, "clues": clues, "suspects": suspects, "dossiers": dossiers,
         "culprit": culprit_idx, "fail_reason": fail_reason, "max_wrong": cfg["max_wrong"],
+        "actions": actions,
     }
 
 
 async def start_detective_game(callback: CallbackQuery, level: int = 1):
     case = _gen_detective_case(level)
-    _detective_games[callback.from_user.id] = {"case": case, "step": 0, "level": level, "wrong": 0, "eliminated": set()}
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="det_next")]])
-    await callback.message.edit_text(f"🔍 **Детектив** ({LEVEL_NAMES[level]})\n\n{case['intro']}", reply_markup=kb, parse_mode="Markdown")
+    _detective_games[callback.from_user.id] = {"case": case, "level": level, "wrong": 0, "eliminated": set(), "revealed": set()}
     await callback.answer()
+    await _detective_render_investigation(callback, _detective_games[callback.from_user.id], intro=True)
 
 
-@router.callback_query(F.data == "det_next")
-async def det_next(callback: CallbackQuery):
+async def _detective_render_investigation(callback: CallbackQuery, game, intro: bool = False):
+    case = game["case"]
+    revealed = game["revealed"]
+
+    header = f"🔍 **Детектив** ({LEVEL_NAMES[game['level']]})\n\n{case['intro']}\n\n" if intro else "🔍 **Детектив**\n\n"
+    if revealed:
+        notes = "\n".join(case["clues"][i] for i in sorted(revealed))
+        header += f"📋 **Материалы дела:**\n{notes}\n\n"
+    header += "Выбери, что сделать дальше:"
+
+    rows = []
+    for i in range(len(case["clues"])):
+        if i in revealed:
+            continue
+        rows.append([InlineKeyboardButton(text=case["actions"][i], callback_data=f"det_investigate_{i}")])
+
+    await callback.message.edit_text(header, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="Markdown")
+
+
+@router.callback_query(F.data.startswith("det_investigate_"))
+async def det_investigate(callback: CallbackQuery):
     user_id = callback.from_user.id
     game = _detective_games.get(user_id)
     if not game:
         await callback.answer("Игра не найдена, начни заново", show_alert=True)
         return
 
+    idx = int(callback.data.replace("det_investigate_", "", 1))
     case = game["case"]
-    game["step"] += 1
-    step = game["step"]
-    shown_clues = "\n".join(case["clues"][:step])
-
-    if step < len(case["clues"]):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="det_next")]])
-        await callback.message.edit_text(f"🔍 **Детектив**\n\n{shown_clues}", reply_markup=kb, parse_mode="Markdown")
+    if idx in game["revealed"]:
         await callback.answer()
         return
 
+    game["revealed"].add(idx)
+    await callback.answer(f"🔎 {case['clues'][idx]}", show_alert=True)
+
+    if len(game["revealed"]) < len(case["clues"]):
+        await _detective_render_investigation(callback, game)
+        return
+
+    shown_clues = "\n".join(case["clues"])
     dossiers = "\n".join(case["dossiers"])
-    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n{shown_clues}\n\n👤 **Досье подозреваемых:**\n{dossiers}\n\nКого обвинишь?")
+    await _detective_show_suspects(callback, game, f"🔍 **Детектив**\n\n📋 **Все материалы собраны:**\n{shown_clues}\n\n👤 **Досье подозреваемых:**\n{dossiers}\n\nКого обвинишь?")
 
 
 async def _detective_show_suspects(callback: CallbackQuery, game, header_text: str):
