@@ -250,17 +250,20 @@ async def daily_admin_test(callback: CallbackQuery, bot: Bot):
 # ═══════════════════════════════════════════════════════════
 # ЛЕСТНИЦА СЛОЖНОСТИ: общий финал раунда для ВСЕХ 7 игр
 # ═══════════════════════════════════════════════════════════
-# Скрытый бонус алмазами за прохождение 3 (максимальной) сложности в конкретные
-# дни - специально НЕ упоминается ни в одном сообщении игроку.
-_SECRET_DIAMOND_BONUS = {3: 1, 6: 2, 7: 3}
+# Доп.бонус алмазами за прохождение 3 (максимальной) сложности в конкретные дни
+LEVEL3_DIAMOND_BONUS = {3: 1, 6: 2, 7: 3}
 
 
-def _apply_secret_diamond_bonus(user, day, cleared_level):
+def _apply_level3_diamond_bonus(user, day, cleared_level):
+    """Начисляет алмазы за прохождение 3 сложности (если день входит в список)
+    и возвращает сумму, чтобы её можно было показать в тексте награды."""
     if cleared_level == 3:
-        amount = _SECRET_DIAMOND_BONUS.get(day, 0)
+        amount = LEVEL3_DIAMOND_BONUS.get(day, 0)
         if amount:
             user["diamonds"] += amount
             user["total_diamonds_earned"] += amount
+            return amount
+    return 0
 
 
 async def _bank_and_finish(callback: CallbackQuery, day: int, cleared_level: int, result_text: str):
@@ -277,7 +280,9 @@ async def _bank_and_finish(callback: CallbackQuery, day: int, cleared_level: int
             result_text += f"\n\n💰 Итоговый бонус: +{bonus_str} монет!"
         else:
             result_text += "\n\nБез бонуса в этот раз - возвращайся завтра за новым днём."
-        _apply_secret_diamond_bonus(user, day, cleared_level)
+        diamond_bonus = _apply_level3_diamond_bonus(user, day, cleared_level)
+        if diamond_bonus:
+            result_text += f"\n💎 Бонус за прохождение 3 сложности: +{diamond_bonus}!"
         await database.save_user(user_id, user)
     _level_progress.pop(user_id, None)
     await callback.message.edit_text(result_text, parse_mode="Markdown")
@@ -297,7 +302,9 @@ async def _bank_and_finish_new_message(user_id: int, bot: Bot, day: int, cleared
             result_text += f"\n\n💰 Итоговый бонус: +{bonus_str} монет!"
         else:
             result_text += "\n\nБез бонуса в этот раз - возвращайся завтра за новым днём."
-        _apply_secret_diamond_bonus(user, day, cleared_level)
+        diamond_bonus = _apply_level3_diamond_bonus(user, day, cleared_level)
+        if diamond_bonus:
+            result_text += f"\n💎 Бонус за прохождение 3 сложности: +{diamond_bonus}!"
         await database.save_user(user_id, user)
     _level_progress.pop(user_id, None)
     await bot.send_message(user_id, result_text, parse_mode="Markdown")
