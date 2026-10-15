@@ -344,7 +344,8 @@ def _format_donation_line(don):
     except (ValueError, TypeError):
         date_str = raw_date
 
-    return f"{method_label} | {amount_str} → 💎{diamonds_str} | {date_str}"
+    refunded_marker = " ↩️ВОЗВРАТ" if don.get("refunded") else ""
+    return f"{method_label} | {amount_str} → 💎{diamonds_str} | {date_str}{refunded_marker}"
 
 
 def get_user_donations_text_kb(target_id, page, don_offset):
@@ -453,6 +454,8 @@ async def process_successful_payment(message: Message, bot: Bot):
         "method": method,
         "amount": total_amount,
         "currency": currency,
+        "pkg_key": pkg_key,
+        "refunded": False,
     })
 
     await database.save_user(user_id, user)
@@ -495,3 +498,60 @@ async def process_successful_payment(message: Message, bot: Bot):
             await bot.send_message(admin_id, admin_text, parse_mode="Markdown")
         except Exception as e:
             logging.warning(f"Не удалось уведомить админа {admin_id} о донате: {e}")
+
+
+@router.message(F.refunded_payment)
+async def process_refunded_payment(message: Message, bot: Bot):
+    """Telegram позволяет покупателю запросить возврат оплаты Stars - если
+    это произойдёт, списываем обратно начисленные алмазы (но не уводим
+    баланс в минус, если игрок их уже потратил) и сообщаем админам, чтобы
+    было видно, не злоупотребляет ли кто-то этим."""
+    rp = message.refunded_payment
+    payload = rp.invoice_payload
+    try:
+        _, pkg_key, _ = payload.split("|")
+    except ValueError:
+        logging.error(f"Некорректный payload возврата: {payload}")
+        return
+
+    pkg = next((p for p in DIAMOND_PACKAGES if p["key"] == pkg_key), None)
+    user_id = message.from_user.id
+
+    if not pkg or _users is None or user_id not in _users:
+        logging.error(f"Возврат прошёл, но пакет/игрок не найден: payload={payload}, user_id={user_id}")
+        return
+
+    user = _users[user_id]
+    diamonds_to_remove = pkg["diamonds"]
+    # Не уводим баланс алмазов в минус - если игрок уже потратил их, списываем сколько есть
+    removed = min(diamonds_to_remove, user.get("diamonds", 0))
+    user["diamonds"] -= removed
+
+    # Помечаем самый свежий непомеченный донат с таким пакетом как возвращённый
+    # (точного ID транзакции в наших записях нет - это лучшее приближение)
+    for d in reversed(user.get("donations", [])):
+        if d.get("pkg_key") == pkg_key and not d.get("refunded"):
+            d["refunded"] = True
+            break
+
+    await database.save_user(user_id, user)
+
+    currency = rp.currency
+    total_amount = rp.total_amount
+    paid_str = f"{total_amount} ⭐" if currency == "XTR" else f"{total_amount / 100:.0f} {currency}"
+
+    buyer_username = message.from_user.username
+    buyer_label = f"@{buyer_username}" if buyer_username else f"ID {user_id}"
+    admin_text = (
+        f"↩️ **Возврат оплаты!**\n\n"
+        f"👤 Игрок: {buyer_label} (Telegram ID: `{user_id}`)\n"
+        f"📦 Пакет: 💎 {pkg['diamonds']}\n"
+        f"💵 Сумма возврата: {paid_str}\n"
+        f"💎 Списано обратно: {removed} (из {diamonds_to_remove})"
+        + ("\n⚠️ Списано не полностью - игрок уже потратил часть алмазов!" if removed < diamonds_to_remove else "")
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, admin_text, parse_mode="Markdown")
+        except Exception as e:
+            logging.warning(f"Не удалось уведомить админа {admin_id} о возврате: {e}")
