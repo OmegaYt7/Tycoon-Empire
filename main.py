@@ -290,9 +290,33 @@ def profile_menu():
 def settings_menu():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="📝 Сменить ник"), KeyboardButton(text="🔒 Конфиденциальность")],
-        [KeyboardButton(text="ℹ️ О игре"), KeyboardButton(text="👮‍♂️ Админ панель")],
+        [KeyboardButton(text="ℹ️ О игре"), KeyboardButton(text="📄 Политика конфиденциальности")],
+        [KeyboardButton(text="👮‍♂️ Админ панель")],
         [KeyboardButton(text="🔙 Назад")]
     ], resize_keyboard=True, one_time_keyboard=False)
+
+
+def get_privacy_policy_text():
+    return (
+        "📄 **Политика конфиденциальности**\n\n"
+        "**Какие данные собираются:**\n"
+        "- Telegram ID, username и выбранный никнейм\n"
+        "- Игровой прогресс (баланс, здания, уровень и т.п.)\n"
+        "- История покупок алмазов (дата, сумма, способ оплаты) - без данных карты, "
+        "их обрабатывает сама платёжная система Telegram, бот их не видит и не хранит\n\n"
+        "**Зачем:**\n"
+        "Чтобы бот работал - сохранял твой прогресс между сессиями, обрабатывал покупки "
+        "и показывал топ игроков.\n\n"
+        "**Где хранится:**\n"
+        "В защищённой базе данных (Neon/PostgreSQL), доступ есть только у администраторов бота.\n\n"
+        "**Передача третьим лицам:**\n"
+        "Данные не продаются и не передаются третьим лицам, за исключением Telegram "
+        "(для обработки платежей) и случаев, предусмотренных законом.\n\n"
+        "**Твои права:**\n"
+        "Можешь запросить полное удаление своих данных из бота - напиши администратору "
+        "через настройки или команду /start, и твой аккаунт будет удалён из базы безвозвратно.\n\n"
+        "Используя бота, ты соглашаешься с этой политикой."
+    )
 
 def cancel_menu():
     return ReplyKeyboardMarkup(keyboard=[
@@ -556,6 +580,11 @@ async def start(message: Message):
 # ═══════════════════════════════════════════════════════════
 # СИСТЕМА ПРОМОКОДОВ
 # ═══════════════════════════════════════════════════════════
+@dp.message(Command("privacy"))
+async def privacy_command(message: Message):
+    await message.answer(get_privacy_policy_text(), parse_mode="Markdown")
+
+
 @dp.message(Command("promo"))
 async def promo_handler(message: Message):
     user_id = message.from_user.id
@@ -723,6 +752,7 @@ async def handle_text(message: Message):
     elif message.text == "⚙️ Настройки": await message.answer("⚙️ **Меню настроек**", reply_markup=settings_menu(), parse_mode="Markdown")
     elif message.text == "🔙 Назад": await message.answer("🚀 Главное меню:", reply_markup=main_menu())
     elif message.text == "🔒 Конфиденциальность": await privacy_settings(message)
+    elif message.text == "📄 Политика конфиденциальности": await message.answer(get_privacy_policy_text(), parse_mode="Markdown")
     elif message.text == "ℹ️ О игре": await about_game(message)
     elif message.text == "📝 Сменить ник": await request_nick_change(message)
     elif message.text == "👮‍♂️ Админ панель": await open_admin_panel(message)
