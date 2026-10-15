@@ -944,6 +944,7 @@ async def start_memory_game(callback: CallbackQuery, level: int = 1):
     game = {
         "cards": cards, "revealed": [False] * len(cards), "matched": [False] * len(cards),
         "first_pick": None, "attempts": 0, "level": level, "max_attempts": cfg["attempts"],
+        "busy": False,
     }
     _pairs_games[callback.from_user.id] = game
     await callback.message.edit_text(
@@ -961,6 +962,15 @@ async def memory_pick(callback: CallbackQuery):
         await callback.answer("Игра не найдена, начни заново", show_alert=True)
         return
 
+    # ВАЖНО (фикс бага): пока идёт проверка второй карты (1.2с паузы перед
+    # тем как закрыть несовпавшую пару), игрок успевал тапнуть третью карту -
+    # она параллельно обрабатывалась как "вторая карта" к тому же first_pick,
+    # и в итоге одна карта оставалась без пары навсегда. Блокируем любые тапы,
+    # пока идёт проверка текущей пары.
+    if game.get("busy"):
+        await callback.answer()
+        return
+
     idx = int(callback.data.replace("pair_", "", 1))
     if game["matched"][idx] or game["revealed"][idx]:
         await callback.answer()
@@ -975,6 +985,7 @@ async def memory_pick(callback: CallbackQuery):
 
     first = game["first_pick"]
     game["revealed"][idx] = True
+    game["busy"] = True
 
     await callback.message.edit_reply_markup(reply_markup=_pairs_render_kb(game))
     await callback.answer()
@@ -990,6 +1001,7 @@ async def memory_pick(callback: CallbackQuery):
     game["revealed"][first] = False
     game["revealed"][idx] = False
     game["first_pick"] = None
+    game["busy"] = False
 
     if all(game["matched"]):
         del _pairs_games[user_id]
