@@ -1029,8 +1029,8 @@ async def memory_pick(callback: CallbackQuery):
 _picture_games = {}
 PICTURE_LEVEL_CFG = {
     1: {"size": 4, "seq_len": 4, "delay": 0.7},
-    2: {"size": 5, "seq_len": 6, "delay": 0.55},
-    3: {"size": 6, "seq_len": 8, "delay": 0.4},
+    2: {"size": 5, "seq_len": 6, "delay": 0.85},
+    3: {"size": 6, "seq_len": 8, "delay": 0.7},
 }
 
 
